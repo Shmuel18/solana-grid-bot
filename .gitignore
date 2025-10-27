@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+.DS_Store
+Thumbs.db
+.trades/
+trades.csv
+*.log
