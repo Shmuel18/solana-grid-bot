@@ -171,8 +171,6 @@ This project is licensed under the **MIT License** — feel free to use and modi
 
 ---
 
-# 🇮🇱 גרסה בעברית (תמיכה מלאה מימין לשמאל)
-
 <div dir="rtl">
 
 ## 💰 בוט גריד לסולאנה
