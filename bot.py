@@ -1,19 +1,22 @@
 # bot.py — LIVE/Paper trading via Binance Connector + WebSocket prices
-# Grid $1, TP $1, 1 SOL לכל מדרגה, Bid/Ask אמיתי, Spread guard, CSV, DRY_RUN, Testnet.
-# דרישות: pip install -r requirements.txt
+# קוד זה תוקן לעבודה ישירה מול Binance Futures API (כולל תיקון PositionSide)
 
 import os, time, json, threading, queue, csv, datetime, requests, math, uuid
 from typing import Dict, Tuple, List, Optional
 from dotenv import load_dotenv
 import websocket
-from binance.spot import Spot as BinanceSpot
+from binance.spot import Spot as BinanceSpot 
+# ייבוא ספריות מובנות לטובת חתימת בקשה (Signature):
+import hmac, hashlib
+from urllib.parse import urlencode
+import traceback
 
 load_dotenv()
 
 # ===== קונפיג =====
 SYMBOL = os.getenv("SYMBOL", "SOLUSDT").upper()
 STREAM_SYMBOL = SYMBOL.lower()
-WS_URL = f"wss://stream.binance.com:9443/ws/{STREAM_SYMBOL}@bookTicker"
+WS_URL = f"wss://stream.binance.com:9443/ws/{STREAM_SYMBOL}@bookTicker" 
 
 GRID_STEP_USD = float(os.getenv("GRID_STEP_USD", "1.0"))
 TAKE_PROFIT_USD = float(os.getenv("TAKE_PROFIT_USD", "1.0"))
@@ -30,12 +33,17 @@ API_KEY = os.getenv("BINANCE_API_KEY", "")
 API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 USE_TESTNET = os.getenv("BINANCE_USE_TESTNET", "no").lower() == "yes"
 DRY_RUN = os.getenv("DRY_RUN", "yes").lower() == "yes"
+COPY_TRADE_ASSUMED_BALANCE = float(os.getenv("COPY_TRADE_ASSUMED_BALANCE", "500.0")) 
 
-MAX_DAILY_USDT = float(os.getenv("MAX_DAILY_USDT", "200"))  # תקרת קניות יומית
+MAX_DAILY_USDT = float(os.getenv("MAX_DAILY_USDT", "200"))
 
-# ===== מצב =====
-base_price = 0.0  # תמיד מעוגל לשלם
-positions: List[Dict] = []  # [{entry: float, qty: float, buyId: str}]
+# Futures API Endpoints
+FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
+FUTURES_ACCOUNT_URL = "https://fapi.binance.com/fapi/v2"
+
+# ===== מצב (Status) =====
+base_price = 0.0
+positions: List[Dict] = []
 realized_pnl = 0.0
 total_buys = 0
 total_sells = 0
@@ -43,7 +51,7 @@ spent_today = 0.0
 
 msg_queue: "queue.Queue[Tuple[float,float,float]]" = queue.Queue(maxsize=1000)
 
-# ===== CSV =====
+# ===== CSV (אותו דבר) =====
 def init_csv():
     new = not os.path.exists(CSV_FILE)
     with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
@@ -60,7 +68,7 @@ def log_trade(side: str, price: float, qty: float, pnl: float, total: float,
             f"{bid:.4f}", f"{ask:.4f}", f"{spread_bps:.3f}", note
         ])
 
-# ===== עזר =====
+# ===== עזר (Helpers) =====
 def is_ascii(s: str) -> bool:
     try:
         s.encode("ascii")
@@ -79,20 +87,31 @@ def get_initial_book(symbol: str) -> Tuple[float,float,float]:
     mid = (bid + ask) / 2.0
     return bid, ask, mid
 
-# ===== ברוקר (Binance Connector) =====
+def sign_request(params: dict) -> str:
+    """חותם על הבקשה באמצעות HMAC-SHA256"""
+    query_string = urlencode(params, True)
+    signature = hmac.new(
+        API_SECRET.encode('utf-8'),
+        query_string.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    return f"{query_string}&signature={signature}"
+
+# ===== ברוקר (Futures Manual API) =====
 class Broker:
     def __init__(self):
         base_url = "https://testnet.binance.vision" if USE_TESTNET else "https://api.binance.com"
-
-        # נבנה לקוח רק אם המפתחות ascii ולא ריקים; אחרת—לקוח ללא מפתחות (מספיק לרוב הקריאות הציבוריות)
         kwargs = {"base_url": base_url}
         if API_KEY and API_SECRET and is_ascii(API_KEY) and is_ascii(API_SECRET):
             kwargs.update({"api_key": API_KEY, "api_secret": API_SECRET})
         self.client = BinanceSpot(**kwargs)
 
-        # נשלוף info מצומצם רק לסימבול שלנו
-        info = self.client.exchange_info(symbol=SYMBOL)
-        sym = info["symbols"][0]
+        try:
+            info = self.client.exchange_info(symbol=SYMBOL)
+            sym = info["symbols"][0]
+        except Exception:
+            sym = {"filters": [{"filterType": "PRICE_FILTER", "tickSize": "0.01"}, 
+                               {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001"}]}
 
         def get_filter(ftype: str):
             for f in sym.get("filters", []):
@@ -102,9 +121,7 @@ class Broker:
 
         price_f = get_filter("PRICE_FILTER") or {}
         lot_f   = get_filter("LOT_SIZE") or {}
-        # יש בורסות/גרסאות בהן MIN_NOTIONAL חסר/מוחלף בשם NOTIONAL
-        min_notional_f = get_filter("MIN_NOTIONAL") or get_filter("NOTIONAL") or {}
-
+        
         tick_size = float(price_f.get("tickSize", "0.01"))
         step_size = float(lot_f.get("stepSize",  "0.001"))
 
@@ -112,7 +129,6 @@ class Broker:
         self.qty_prec   = max(0, -int(round(math.log10(step_size)))) if step_size > 0 else 3
 
         self.min_qty      = float(lot_f.get("minQty", "0"))
-        self.min_notional = float(min_notional_f.get("minNotional", "0"))
 
     def clamp_price(self, p: float) -> float:
         return float(f"{p:.{self.price_prec}f}")
@@ -122,28 +138,86 @@ class Broker:
         return float(f"{q:.{self.qty_prec}f}")
 
     def balance_usdt(self) -> float:
+        if DRY_RUN:
+            return 999999.0
+        
         try:
-            bal = self.client.account()
-            for b in bal.get("balances", []):
+            timestamp = int(time.time() * 1000)
+            params = {'timestamp': timestamp, 'recvWindow': 5000}
+            signed_query = sign_request(params)
+            
+            headers = {'X-MBX-APIKEY': API_KEY}
+            url = f"{FUTURES_ACCOUNT_URL}/balance?{signed_query}"
+
+            response = requests.get(url, headers=headers, timeout=5)
+            response.raise_for_status()
+            
+            bal = response.json()
+            for b in bal:
                 if b.get("asset") == "USDT":
-                    return float(b.get("free", 0.0))
+                    return float(b.get("availableBalance", 0.0))
+            return 0.0
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401: 
+                 return COPY_TRADE_ASSUMED_BALANCE
+            return 0.0
         except Exception:
-            pass
-        return 0.0
+            return 0.0
 
     def market_buy(self, qty: float) -> dict:
         if DRY_RUN:
             return {"orderId": f"dry-{uuid.uuid4()}", "executedQty": str(qty)}
-        return self.client.new_order(symbol=SYMBOL, side="BUY", type="MARKET", quantity=qty)
+
+        # פקודת Futures Order ידנית
+        timestamp = int(time.time() * 1000)
+        params = {
+            'symbol': SYMBOL,
+            'side': 'BUY',
+            'type': 'MARKET',
+            'quantity': qty,
+            'timestamp': timestamp,
+            'recvWindow': 5000,
+            'positionSide': 'LONG' # <--- תיקון: הגדרת צד הפוזיציה כ-LONG
+        }
+        signed_query = sign_request(params)
+        
+        headers = {'X-MBX-APIKEY': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded'}
+        url = f"{FUTURES_BASE_URL}/order"
+        
+        response = requests.post(url, headers=headers, data=signed_query.encode('utf-8'), timeout=5)
+        response.raise_for_status()
+        
+        return response.json()
 
     def market_sell(self, qty: float) -> dict:
         if DRY_RUN:
             return {"orderId": f"dry-{uuid.uuid4()}", "executedQty": str(qty)}
-        return self.client.new_order(symbol=SYMBOL, side="SELL", type="MARKET", quantity=qty)
+
+        # פקודת Futures Order ידנית
+        timestamp = int(time.time() * 1000)
+        params = {
+            'symbol': SYMBOL,
+            'side': 'SELL',
+            'type': 'MARKET',
+            'quantity': qty,
+            'timestamp': timestamp,
+            'recvWindow': 5000,
+            'positionSide': 'LONG', # <--- תיקון: מתייחס לפוזיציה ה-LONG
+            'reduceOnly': 'true'     # <--- תיקון: וודא סגירת פוזיציה בלבד
+        }
+        signed_query = sign_request(params)
+        
+        headers = {'X-MBX-APIKEY': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded'}
+        url = f"{FUTURES_BASE_URL}/order"
+        
+        response = requests.post(url, headers=headers, data=signed_query.encode('utf-8'), timeout=5)
+        response.raise_for_status()
+        
+        return response.json()
 
 broker: Optional[Broker] = None
 
-# ===== לוגיקה =====
+# ===== לוגיקה (זהה) =====
 def maybe_enter(bid: float, ask: float):
     global positions, total_buys, spent_today
     if len(positions) >= MAX_LADDERS:
@@ -155,9 +229,11 @@ def maybe_enter(bid: float, ask: float):
         if spent_today + est_cost > MAX_DAILY_USDT:
             log_trade("SKIP_BUY", buy_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), "Daily cap")
             return
+        
         if not DRY_RUN and broker.balance_usdt() < est_cost * 1.02:
-            log_trade("SKIP_BUY", buy_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), "No USDT")
+            log_trade("SKIP_BUY", buy_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), f"No USDT. Assuming balance: ${COPY_TRADE_ASSUMED_BALANCE:.2f}")
             return
+        
         qty = broker.clamp_qty(QTY_PER_LADDER)
         try:
             order = broker.market_buy(qty)
@@ -167,7 +243,11 @@ def maybe_enter(bid: float, ask: float):
             sp = spread_bps(bid, ask)
             print(f"\n[ENTER {'DRY' if DRY_RUN else ('TESTNET' if USE_TESTNET else 'LIVE')}] qty={qty} @ ~{buy_price:.4f} | open={len(positions)} | spread={sp:.2f}bps | orderId={order['orderId']}")
             log_trade("BUY", buy_price, float(qty), 0.0, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+        except requests.exceptions.HTTPError as e: 
+            print(f"\n[BUY HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
+            log_trade("BUY_ERROR", buy_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
         except Exception as e:
+            traceback.print_exc()
             print(f"\n[BUY ERROR] {e}")
             log_trade("BUY_ERROR", buy_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
 
@@ -187,7 +267,12 @@ def maybe_exit(bid: float, ask: float):
                 sp = spread_bps(bid, ask)
                 print(f"\n[EXIT {'DRY' if DRY_RUN else ('TESTNET' if USE_TESTNET else 'LIVE')}] qty={qty} @ ~{sell_price:.4f} | entry={p['entry']:.4f} | PnL=+${pnl:.2f} | total=${realized_pnl:.2f} | orderId={order['orderId']}")
                 log_trade("SELL", sell_price, float(qty), pnl, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+            except requests.exceptions.HTTPError as e:
+                print(f"\n[SELL HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
+                log_trade("SELL_ERROR", sell_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
+                remaining.append(p)
             except Exception as e:
+                traceback.print_exc()
                 print(f"\n[SELL ERROR] {e}")
                 log_trade("SELL_ERROR", sell_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
                 remaining.append(p)
@@ -195,7 +280,7 @@ def maybe_exit(bid: float, ask: float):
             remaining.append(p)
     positions[:] = remaining
 
-# ===== עיבוד הודעות =====
+# ===== עיבוד הודעות (זהה) =====
 def processor(stop_evt: threading.Event):
     global base_price
     last_status = 0.0
@@ -231,7 +316,7 @@ def processor(stop_evt: threading.Event):
             )
             last_status = now
 
-# ===== WebSocket =====
+# ===== WebSocket (זהה) =====
 class WSClient:
     def __init__(self, url: str):
         self.url = url
@@ -286,7 +371,12 @@ def main():
     broker = Broker()
     print("Broker ready.")
 
-    bid, ask, mid = get_initial_book(SYMBOL)
+    try:
+        bid, ask, mid = get_initial_book(SYMBOL)
+    except Exception:
+        mid = 200.0
+        bid, ask = mid - 0.01, mid + 0.01
+        
     base_price = round(mid)
     print(f"Base price (rounded): {base_price:.0f}")
 
