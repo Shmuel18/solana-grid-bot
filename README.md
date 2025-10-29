@@ -1,8 +1,5 @@
 ---
 
-## 🇬🇧 README.md (English)
-
-```markdown
 # ✨ Solana Grid Bot (Futures Edition) ✨
 
 **Full-stack automation meets smart trading.**  
@@ -12,18 +9,19 @@ A clean, efficient DCA-grid bot designed for **SOL/USDT** on Binance UM Futures,
 
 ## 👤 About Me
 
-Hi, I’m Shmuel — a driven crypto-trader & developer from Tel Aviv, blending code with capital-markets smarts.  
-I build tools that run while I sleep, so my money works—**even when I don’t**.  
-I’m passionate about: automation · risk-control · elegant code.
+Hi, I’m Shmuel — a driven crypto-trader & developer from Tel-Aviv, blending code with capital-markets smarts.  
+I build tools that run while I sleep, so my money works—even when I don’t.
 
 ---
 
 ## 🧰 Tech Stack
 
-**Languages & Platforms**
-
 - Python 3.10+
-- Binance API (UM Futures)
+- Binance UM Futures API
+- WebSockets
+- HMAC-signed REST
+
+...
 
 **Tools & Libraries**
 
@@ -175,7 +173,6 @@ MIT — free for personal or commercial use.
 
 ---
 
-## 🇮🇱 README.he.md (עברית)
 
 ```markdown
 <div dir="rtl">
