@@ -1,5 +1,6 @@
-# bot.py — LIVE/Paper trading via Binance Connector + WebSocket prices
-# קוד זה תוקן לעבודה ישירה מול Binance Futures API (כולל תיקון PositionSide)
+# bot.py — LIVE/Paper trading via Binance Futures Connector
+# קוד זה תוקן לעבודה ישירה מול Binance Futures API (כולל Long/Short Strategy ו-Persistence).
+# דרישות: requests, websocket-client, python-dotenv (כבר מותקנות)
 
 import os, time, json, threading, queue, csv, datetime, requests, math, uuid
 from typing import Dict, Tuple, List, Optional
@@ -25,6 +26,7 @@ QTY_PER_LADDER = float(os.getenv("QTY_PER_LADDER", "1.0"))
 MAX_SPREAD_BPS = float(os.getenv("MAX_SPREAD_BPS", "8"))
 INTERVAL_STATUS_SEC = float(os.getenv("INTERVAL_STATUS_SEC", "1.5"))
 CSV_FILE = os.getenv("CSV_FILE", "trades.csv")
+STATE_FILE = os.getenv("STATE_FILE", "bot_state.json")
 
 PING_INTERVAL = 20.0
 RECONNECT_MIN, RECONNECT_MAX = 1.0, 30.0
@@ -36,6 +38,12 @@ DRY_RUN = os.getenv("DRY_RUN", "yes").lower() == "yes"
 COPY_TRADE_ASSUMED_BALANCE = float(os.getenv("COPY_TRADE_ASSUMED_BALANCE", "500.0")) 
 
 MAX_DAILY_USDT = float(os.getenv("MAX_DAILY_USDT", "200"))
+
+# === אסטרטגיה חדשה ===
+STRATEGY_SIDE = os.getenv("STRATEGY_SIDE", "LONG_ONLY").upper() # LONG_ONLY or SHORT_ONLY
+if STRATEGY_SIDE not in ["LONG_ONLY", "SHORT_ONLY"]:
+    print(f"[FATAL] Invalid STRATEGY_SIDE: {STRATEGY_SIDE}. Defaulting to LONG_ONLY.")
+    STRATEGY_SIDE = "LONG_ONLY"
 
 # Futures API Endpoints
 FUTURES_BASE_URL = "https://fapi.binance.com/fapi/v1"
@@ -67,6 +75,40 @@ def log_trade(side: str, price: float, qty: float, pnl: float, total: float,
             side, f"{price:.4f}", f"{qty:.6f}", f"{pnl:.4f}", f"{total:.4f}",
             f"{bid:.4f}", f"{ask:.4f}", f"{spread_bps:.3f}", note
         ])
+
+# ===== שמירה וטעינת מצב (Persistence) =====
+def save_state():
+    """שומר את מצב הבוט הנוכחי לקובץ JSON."""
+    state = {
+        "base_price": base_price,
+        "positions": positions,
+        "realized_pnl": realized_pnl,
+        "total_buys": total_buys,
+        "total_sells": total_sells,
+        "spent_today": spent_today,
+    }
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=4)
+
+def load_state():
+    """טוען את מצב הבוט מקובץ JSON קיים."""
+    global base_price, positions, realized_pnl, total_buys, total_sells, spent_today
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            try:
+                state = json.load(f)
+                base_price = state.get("base_price", base_price)
+                positions = state.get("positions", positions)
+                realized_pnl = state.get("realized_pnl", realized_pnl)
+                total_buys = state.get("total_buys", total_buys)
+                total_sells = state.get("total_sells", total_sells)
+                spent_today = state.get("spent_today", spent_today)
+                print(f"\n[STATE] Loaded state from {STATE_FILE}. Open positions: {len(positions)}")
+                return True
+            except Exception as e:
+                print(f"\n[WARNING] Failed to load state from {STATE_FILE}: {e}. Starting fresh.")
+                return False
+    return False
 
 # ===== עזר (Helpers) =====
 def is_ascii(s: str) -> bool:
@@ -168,16 +210,19 @@ class Broker:
         if DRY_RUN:
             return {"orderId": f"dry-{uuid.uuid4()}", "executedQty": str(qty)}
 
-        # פקודת Futures Order ידנית
+        # קביעת צד המסחר עבור פתיחת פוזיציה
+        side_to_open = 'BUY' if STRATEGY_SIDE == 'LONG_ONLY' else 'SELL'
+        position_side = 'LONG' if STRATEGY_SIDE == 'LONG_ONLY' else 'SHORT'
+
         timestamp = int(time.time() * 1000)
         params = {
             'symbol': SYMBOL,
-            'side': 'BUY',
+            'side': side_to_open, # BUY (Long) or SELL (Short)
             'type': 'MARKET',
             'quantity': qty,
             'timestamp': timestamp,
             'recvWindow': 5000,
-            'positionSide': 'LONG' # <--- תיקון: הגדרת צד הפוזיציה כ-LONG
+            'positionSide': position_side # LONG or SHORT
         }
         signed_query = sign_request(params)
         
@@ -193,17 +238,20 @@ class Broker:
         if DRY_RUN:
             return {"orderId": f"dry-{uuid.uuid4()}", "executedQty": str(qty)}
 
-        # פקודת Futures Order ידנית
+        # קביעת צד המסחר עבור סגירת פוזיציה
+        side_to_close = 'SELL' if STRATEGY_SIDE == 'LONG_ONLY' else 'BUY'
+        position_side = 'LONG' if STRATEGY_SIDE == 'LONG_ONLY' else 'SHORT'
+
         timestamp = int(time.time() * 1000)
         params = {
             'symbol': SYMBOL,
-            'side': 'SELL',
+            'side': side_to_close, # SELL (סוגר Long) or BUY (סוגר Short)
             'type': 'MARKET',
             'quantity': qty,
             'timestamp': timestamp,
             'recvWindow': 5000,
-            'positionSide': 'LONG', # <--- תיקון: מתייחס לפוזיציה ה-LONG
-            'reduceOnly': 'true'     # <--- תיקון: וודא סגירת פוזיציה בלבד
+            'positionSide': position_side,
+            'reduceOnly': 'true'     # וודא סגירת פוזיציה בלבד
         }
         signed_query = sign_request(params)
         
@@ -222,16 +270,30 @@ def maybe_enter(bid: float, ask: float):
     global positions, total_buys, spent_today
     if len(positions) >= MAX_LADDERS:
         return
-    next_level = base_price - GRID_STEP_USD * (len(positions) + 1)
-    buy_price = ask
-    if buy_price <= next_level:
-        est_cost = buy_price * QTY_PER_LADDER
+
+    is_long_strategy = (STRATEGY_SIDE == "LONG_ONLY")
+
+    # Entry Logic is different for LONG vs SHORT
+    if is_long_strategy:
+        next_level = base_price - GRID_STEP_USD * (len(positions) + 1)
+        # For LONG: Buy if price (Ask) is <= next level (price drop)
+        position_trigger = (ask <= next_level)
+        trade_price = ask
+    else: # SHORT_ONLY
+        next_level = base_price + GRID_STEP_USD * (len(positions) + 1)
+        # For SHORT: Sell if price (Bid) is >= next level (price rise)
+        position_trigger = (bid >= next_level)
+        trade_price = bid
+
+
+    if position_trigger:
+        est_cost = trade_price * QTY_PER_LADDER
         if spent_today + est_cost > MAX_DAILY_USDT:
-            log_trade("SKIP_BUY", buy_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), "Daily cap")
+            log_trade("SKIP_BUY", trade_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), "Daily cap")
             return
         
         if not DRY_RUN and broker.balance_usdt() < est_cost * 1.02:
-            log_trade("SKIP_BUY", buy_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), f"No USDT. Assuming balance: ${COPY_TRADE_ASSUMED_BALANCE:.2f}")
+            log_trade("SKIP_BUY", trade_price, 0, 0, realized_pnl, bid, ask, spread_bps(bid, ask), f"No USDT. Assuming balance: ${COPY_TRADE_ASSUMED_BALANCE:.2f}")
             return
         
         qty = broker.clamp_qty(QTY_PER_LADDER)
@@ -239,42 +301,65 @@ def maybe_enter(bid: float, ask: float):
             order = broker.market_buy(qty)
             total_buys += 1
             spent_today += 0 if DRY_RUN else est_cost
-            positions.append({"entry": buy_price, "qty": float(qty), "buyId": order["orderId"]})
+            positions.append({"entry": trade_price, "qty": float(qty), "buyId": order["orderId"]})
             sp = spread_bps(bid, ask)
-            print(f"\n[ENTER {'DRY' if DRY_RUN else ('TESTNET' if USE_TESTNET else 'LIVE')}] qty={qty} @ ~{buy_price:.4f} | open={len(positions)} | spread={sp:.2f}bps | orderId={order['orderId']}")
-            log_trade("BUY", buy_price, float(qty), 0.0, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+            print(f"\n[ENTER {STRATEGY_SIDE}] qty={qty} @ ~{trade_price:.4f} | open={len(positions)} | spread={sp:.2f}bps | orderId={order['orderId']}")
+            log_trade(f"OPEN_{position_side}", trade_price, float(qty), 0.0, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+            save_state()
         except requests.exceptions.HTTPError as e: 
-            print(f"\n[BUY HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
-            log_trade("BUY_ERROR", buy_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
+            print(f"\n[OPEN HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
+            log_trade("OPEN_ERROR", trade_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
         except Exception as e:
             traceback.print_exc()
-            print(f"\n[BUY ERROR] {e}")
-            log_trade("BUY_ERROR", buy_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
+            print(f"\n[OPEN ERROR] {e}")
+            log_trade("OPEN_ERROR", trade_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
 
 def maybe_exit(bid: float, ask: float):
     global positions, realized_pnl, total_sells
-    sell_price = bid
+    
+    is_long_strategy = (STRATEGY_SIDE == "LONG_ONLY")
+    
+    # Sell price is Bid for both strategies (closing at the best available price)
+    exit_price = bid 
+
     remaining = []
     for p in positions:
-        target = p["entry"] + TAKE_PROFIT_USD
-        if sell_price >= target:
+        
+        # Exit Logic is flipped for SHORT_ONLY
+        if is_long_strategy:
+            target = p["entry"] + TAKE_PROFIT_USD # Long closes when price goes UP
+            exit_condition = (exit_price >= target)
+            side_log = "CLOSE_LONG"
+        else: # SHORT_ONLY
+            target = p["entry"] - TAKE_PROFIT_USD # Short closes when price goes DOWN
+            exit_condition = (exit_price <= target)
+            side_log = "CLOSE_SHORT"
+
+        if exit_condition:
             qty = broker.clamp_qty(p["qty"])
             try:
                 order = broker.market_sell(qty)
-                pnl = (sell_price - p["entry"]) * float(qty)
+                
+                # PnL Calculation must be sensitive to the position side
+                if is_long_strategy:
+                    pnl = (exit_price - p["entry"]) * float(qty)
+                else: # SHORT_ONLY: pnl is (entry - exit)
+                    pnl = (p["entry"] - exit_price) * float(qty)
+                
                 realized_pnl += pnl
                 total_sells += 1
                 sp = spread_bps(bid, ask)
-                print(f"\n[EXIT {'DRY' if DRY_RUN else ('TESTNET' if USE_TESTNET else 'LIVE')}] qty={qty} @ ~{sell_price:.4f} | entry={p['entry']:.4f} | PnL=+${pnl:.2f} | total=${realized_pnl:.2f} | orderId={order['orderId']}")
-                log_trade("SELL", sell_price, float(qty), pnl, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+                print(f"\n[EXIT {STRATEGY_SIDE}] qty={qty} @ ~{exit_price:.4f} | entry={p['entry']:.4f} | PnL=+${pnl:.2f} | total=${realized_pnl:.2f} | orderId={order['orderId']}")
+                log_trade(side_log, exit_price, float(qty), pnl, realized_pnl, bid, ask, sp, f"orderId={order['orderId']}")
+                save_state() 
             except requests.exceptions.HTTPError as e:
-                print(f"\n[SELL HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
-                log_trade("SELL_ERROR", sell_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
+                print(f"\n[CLOSE HTTP ERROR] Status: {e.response.status_code} | Message: {e.response.text}")
+                log_trade("CLOSE_ERROR", exit_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), f"HTTP Error: {e.response.text}")
                 remaining.append(p)
             except Exception as e:
                 traceback.print_exc()
-                print(f"\n[SELL ERROR] {e}")
-                log_trade("SELL_ERROR", sell_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
+                print(f"\n[CLOSE ERROR] {e}")
+                log_trade("CLOSE_ERROR", exit_price, float(qty), 0.0, realized_pnl, bid, ask, spread_bps(bid, ask), str(e))
                 remaining.append(p)
         else:
             remaining.append(p)
@@ -297,21 +382,28 @@ def processor(stop_evt: threading.Event):
                 last_status = time.time()
             continue
 
-        if mid < base_price:
+        is_long_strategy = (STRATEGY_SIDE == "LONG_ONLY")
+        
+        # Grid logic entry condition
+        if is_long_strategy and mid < base_price:
             maybe_enter(bid, ask)
+        elif not is_long_strategy and mid > base_price:
+            maybe_enter(bid, ask)
+            
         if positions:
             maybe_exit(bid, ask)
 
         # עדכון בסיס (כשהסולם ריק) — למספר עגול
         if not positions and abs(mid - base_price) >= GRID_STEP_USD:
             base_price = round(mid)
+            save_state()
 
         now = time.time()
         if now - last_status > INTERVAL_STATUS_SEC:
             print(
                 f"\rMid={mid:.4f} | Bid={bid:.4f} Ask={ask:.4f} | Spread={sp:.2f}bps | Base={base_price:.0f} | "
                 f"Open={len(positions)} | Buys={total_buys} Sells={total_sells} | Realized=${realized_pnl:.2f} | "
-                f"SpentToday=${spent_today:.2f} ({'DRY' if DRY_RUN else ('TESTNET' if USE_TESTNET else 'LIVE')})",
+                f"SpentToday=${spent_today:.2f} ({STRATEGY_SIDE})",
                 end="", flush=True
             )
             last_status = now
@@ -371,14 +463,19 @@ def main():
     broker = Broker()
     print("Broker ready.")
 
-    try:
-        bid, ask, mid = get_initial_book(SYMBOL)
-    except Exception:
-        mid = 200.0
-        bid, ask = mid - 0.01, mid + 0.01
+    state_loaded = load_state()
+
+    if not state_loaded:
+        try:
+            bid, ask, mid = get_initial_book(SYMBOL)
+        except Exception:
+            mid = 200.0
+            bid, ask = mid - 0.01, mid + 0.01
         
-    base_price = round(mid)
+        base_price = round(mid)
+
     print(f"Base price (rounded): {base_price:.0f}")
+    print(f"[STRATEGY] Current strategy: {STRATEGY_SIDE}") # הדפסת אסטרטגיה
 
     init_csv()
 
@@ -394,6 +491,7 @@ def main():
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nStopping...")
+        save_state()
         client.stop()
         stop_evt.set()
         proc_thread.join(timeout=3)

@@ -10,3 +10,4 @@ Thumbs.db
 trades.csv
 *.log
 .vscode/
+bot_state.json

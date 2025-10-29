@@ -1,38 +1,46 @@
-````markdown
-# 💰 Solana Grid Bot
+מעולה. כפי שהומלץ בביקורת, הנה קובץ ה-`README.md` המתוקן.
 
-### A simple and efficient DCA-style grid trading bot for SOL/USDT
+השינויים העיקריים הם: עדכון הכותרות והפיצ'רים לשקף את התמיכה ב-**Binance Futures / Copy Trading**, הוספת הערה על השימוש בחתימת **HMAC** ידנית, והוספת המשתנה החדש לקובץ ה-`.env`.
+
+````markdown
+# 💰 Solana Grid Bot (Futures Edition)
+
+### A simple and efficient DCA-style grid trading bot for SOL/USDT, fully adapted for **Binance Futures / Copy Trading Lead Accounts**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![Binance API](https://img.shields.io/badge/API-Binance-yellow)
-![Status](https://img.shields.io/badge/Mode-DRY%20RUN%20%7C%20LIVE-green)
+![Binance API](https://img.shields.io/badge/API-Binance%20Futures-yellow)
+![Status](https://img.shields.io/badge/Mode-LIVE%20%7C%20Futures-red)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
 
 ## 🧠 Overview
 
-This bot executes **grid-style DCA trades** on the `SOL/USDT` pair.  
-It continuously listens to real-time prices via **Binance WebSocket**,  
-and automatically places **buy** and **sell** orders at fixed dollar intervals.
+This bot executes **grid-style DCA trades** on the `SOL/USDT` pair.
+It is configured specifically to operate as a **Lead Trader** on **Binance UM Futures** (Unified Margin) / **Copy Trading** accounts.
+It continuously listens to real-time prices via **Binance WebSocket**, and automatically places **BUY** and **SELL** orders at fixed dollar intervals using direct, signed HTTP requests.
 
-✅ Designed for _stable, predictable, automated trading_  
-✅ Supports **dry-run**, **testnet**, and **live** trading modes  
-✅ Logs trades to a CSV file  
+✅ Designed for _stable, predictable, automated trading_
+✅ **Fully compatible with Copy Trading API keys**
+✅ Supports **dry-run**, **testnet**, and **live** trading modes
+✅ Logs trades to a CSV file
 ✅ Simple configuration via `.env` file
 
 ---
 
 ## ⚙️ Features
 
-| Feature              | Description                                             |
-| -------------------- | ------------------------------------------------------- |
-| 🔁 Grid Logic        | Places laddered buy/sell orders every fixed dollar step |
-| 💸 Take Profit       | Sells automatically at a defined profit level           |
-| 🧩 Real-Time Updates | Uses Binance WebSocket for instant price tracking       |
-| 🧾 CSV Logging       | Saves all trades with timestamps                        |
-| ⚙️ Configurable      | Edit `.env` to control bot parameters                   |
-| 🧱 DRY Mode          | Safe simulation — no real money involved                |
+| Feature                      | Description                                                                                                       |
+| :--------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| **🚀 Futures/UM Support**    | **Full support for Binance Futures API** (required for Lead/Copy Trading).                                        |
+| **🔐 Custom HMAC Signature** | Uses direct, manually signed HTTP requests to bypass problematic library errors and ensure proper authentication. |
+| **🛠️ Position Side Fix**     | Includes `positionSide='LONG'` and `reduceOnly='true'` parameters for correct order execution on Futures (UM).    |
+| 🔁 Grid Logic                | Places laddered buy/sell orders every fixed dollar step                                                           |
+| 💸 Take Profit               | Sells automatically at a defined profit level                                                                     |
+| 🧩 Real-Time Updates         | Uses Binance WebSocket for instant price tracking                                                                 |
+| 🧾 CSV Logging               | Saves all trades with timestamps                                                                                  |
+| ⚙️ Configurable              | Edit `.env` to control bot parameters                                                                             |
+| 🧱 DRY Mode                  | Safe simulation — no real money involved                                                                          |
 
 ---
 
@@ -41,7 +49,7 @@ and automatically places **buy** and **sell** orders at fixed dollar intervals.
 ### 1️⃣ Clone the repository
 
 ```bash
-git clone https://github.com/Shmuel18/solana-grid-bot.git
+git clone [https://github.com/Shmuel18/solana-grid-bot.git](https://github.com/Shmuel18/solana-grid-bot.git)
 cd solana-grid-bot
 ```
 ````
@@ -60,6 +68,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+> **Note:** The bot uses the `requests` library for market orders. The `binance-connector` is primarily used only for initial exchange information retrieval.
+
 ---
 
 ## 🔐 Configuration (`.env`)
@@ -67,7 +77,7 @@ pip install -r requirements.txt
 Create a file named `.env` in the project root and fill in your settings:
 
 ```bash
-# Binance API keys
+# Binance API keys (must be Futures/Copy Trading API keys)
 BINANCE_API_KEY=your_api_key_here
 BINANCE_API_SECRET=your_secret_here
 
@@ -79,13 +89,18 @@ TAKE_PROFIT_USD=1.0
 MAX_LADDERS=20
 QTY_PER_LADDER=1.0
 MAX_SPREAD_BPS=8
+MAX_DAILY_USDT=200.0 # Maximum total capital to deploy in 24h
 CSV_FILE=trades.csv
 
+# If API key has no permission to check balance (Error 401),
+# this amount is used for a soft check before placing orders.
+COPY_TRADE_ASSUMED_BALANCE=500.0
+
 # Mode: DRY / TESTNET / LIVE
-MODE=DRY
+MODE=LIVE
 ```
 
-> ⚠️ Keep `.env` private — it contains your API keys!
+> ⚠️ Keep `.env` private — it contains your API keys\!
 > The `.gitignore` already excludes it from GitHub.
 
 ---
@@ -98,7 +113,7 @@ MODE=DRY
 python bot.py
 ```
 
-### Live mode (real Binance trading)
+### Live mode (real Binance trading on Futures)
 
 Change in `.env`:
 
@@ -117,11 +132,15 @@ python bot.py
 ## 📊 Example Output
 
 ```
-Starting SOL bot on SOLUSDT | Mode=DRY
-Mid=202.25 | Bid=202.20 Ask=202.30 | Spread=0.5bps | Base=203 | Open=1 | Buys=1 Sells=0 | Realized=$0.00
-Mid=202.10 | Bid=202.05 Ask=202.15 | Spread=0.5bps | Ladder=Buy#2 @201
+Starting SOL bot on SOLUSDT | Mode=LIVE
+Broker ready.
+Base price (rounded): 199
+
+[WS] Connected.
+
+[ENTER LIVE] qty=0.1 @ ~198.6800 | open=1 | spread=0.50bps | orderId=164579406034
+Mid=198.6750 | Bid=198.6700 Ask=198.6800 | Spread=0.50bps | Base=199 | Open=1 | B
 ...
-Bye!
 ```
 
 ---
@@ -131,11 +150,11 @@ Bye!
 ```
 solana-grid-bot/
 │
-├── bot.py              # Main bot logic
+├── bot.py              # Main bot logic (now with custom Futures API calls)
 ├── .env                # Environment configuration (ignored in git)
 ├── .gitignore          # Ignore env/venv/logs/trades
 ├── requirements.txt    # Python dependencies
-├── README.md           # Project documentation
+├── README.md           # Project documentation (this file)
 └── trades.csv          # Trade history (auto-generated)
 ```
 
@@ -144,7 +163,8 @@ solana-grid-bot/
 ## 🧩 Technologies
 
 - **Python 3.10+**
-- **Binance Connector (REST + WebSocket)**
+- **Direct Requests & HMAC Signature (for Futures API)**
+- **Binance Connector (for exchange info only)**
 - **dotenv**
 - **requests**
 - **websocket-client**
@@ -153,9 +173,10 @@ solana-grid-bot/
 
 ## 🧠 Next Steps
 
+- **Safety & Persistence:** Implement position/state saving (serialization) to resume trading after a crash.
 - Add Telegram alerts 📲
 - Add dashboard for live tracking 📈
-- Add strategy switching (long / short / adaptive)
+- Add strategy switching (short side support)
 
 ---
 
@@ -171,21 +192,22 @@ This project is licensed under the **MIT License** — feel free to use and modi
 
 ---
 
-<div dir="rtl">
+\<div dir="rtl"\>
 
-## 💰 בוט גריד לסולאנה
+## 💰 בוט גריד לסולאנה (גרסת Futures)
 
-### בוט מסחר אוטומטי חכם בשיטת DCA עבור SOL/USDT
+### בוט מסחר אוטומטי חכם בשיטת DCA עבור SOL/USDT, מותאם לחשבונות **Binance Futures / Copy Trading Lead**
 
 ---
 
 ## 🧠 סקירה
 
 הבוט מבצע עסקאות קנייה ומכירה מדורגות (Grid) על מטבע **SOL/USDT**.
-הוא מאזין בזמן אמת למחירים דרך **Binance WebSocket**,
-ומבצע קניות ומכירות באופן אוטומטי כל דולר אחד (או לפי הגדרה שלך).
+הוא מוגדר במיוחד לעבודה כ-**Lead Trader** בחשבונות **Binance Futures UM / Copy Trading**.
+הוא מאזין בזמן אמת למחירים דרך **Binance WebSocket**, ומבצע קניות ומכירות באופן אוטומטי במרווחי דולר קבועים באמצעות בקשות HTTP חתומות וישירות.
 
 ✅ מסחר אוטומטי יציב וצפוי
+✅ **תואם מלא למפתחות Copy Trading API**
 ✅ כולל מצב **סימולציה (Dry Run)** ו־**מסחר אמיתי (Live)**
 ✅ רישום עסקאות אוטומטי ל־CSV
 ✅ קובץ הגדרות פשוט לשינוי (`.env`)
@@ -194,14 +216,17 @@ This project is licensed under the **MIT License** — feel free to use and modi
 
 ## ⚙️ תכונות עיקריות
 
-| תכונה              | תיאור                          |
-| ------------------ | ------------------------------ |
-| 🔁 גריד לוגי       | פקודות קנייה/מכירה כל דולר אחד |
-| 💸 רווח אוטומטי    | מוכר באופן אוטומטי ברווח שנקבע |
-| 🧩 נתונים בזמן אמת | מבוסס WebSocket לעדכון מיידי   |
-| 🧾 תיעוד עסקאות    | שומר כל עסקה עם תאריך ושעה     |
-| ⚙️ התאמה אישית     | שליטה מלאה בפרמטרים דרך `.env` |
-| 🧱 מצב יבש (Dry)   | מאפשר בדיקה ללא סיכון כספי     |
+| תכונה                      | תיאור                                                                                      |
+| :------------------------- | :----------------------------------------------------------------------------------------- |
+| **🚀 תמיכת Futures/UM**    | **תמיכה מלאה ב-Binance Futures API** (נדרש ל-Lead/Copy Trading).                           |
+| **🔐 חתימת HMAC מותאמת**   | משתמש בבקשות HTTP ישירות וחתומות ידנית כדי לעקוף שגיאות תוכנה ולהבטיח אימות נכון.          |
+| **🛠️ תיקון Position Side** | כולל את הפרמטרים `positionSide='LONG'` ו-`reduceOnly='true'` לביצוע פקודות תקין ב-Futures. |
+| 🔁 גריד לוגי               | פקודות קנייה/מכירה כל דולר אחד                                                             |
+| 💸 רווח אוטומטי            | מוכר באופן אוטומטי ברווח שנקבע                                                             |
+| 🧩 נתונים בזמן אמת         | מבוסס WebSocket לעדכון מיידי                                                               |
+| 🧾 תיעוד עסקאות            | שומר כל עסקה עם תאריך ושעה                                                                 |
+| ⚙️ התאמה אישית             | שליטה מלאה בפרמטרים דרך `.env`                                                             |
+| 🧱 מצב יבש (Dry)           | מאפשר בדיקה ללא סיכון כספי                                                                 |
 
 ---
 
@@ -210,7 +235,7 @@ This project is licensed under the **MIT License** — feel free to use and modi
 ### 1️⃣ שכפל את הריפו
 
 ```bash
-git clone https://github.com/Shmuel18/solana-grid-bot.git
+git clone [https://github.com/Shmuel18/solana-grid-bot.git](https://github.com/Shmuel18/solana-grid-bot.git)
 cd solana-grid-bot
 ```
 
@@ -235,9 +260,11 @@ pip install -r requirements.txt
 צור קובץ בשם `.env` בתיקייה הראשית והכנס בו את ההגדרות שלך:
 
 ```bash
+# מפתחות Binance API (חייבים להיות מפתחות Futures/Copy Trading)
 BINANCE_API_KEY=המפתח_שלך
 BINANCE_API_SECRET=הסוד_שלך
 
+# פרמטרים של הבוט
 SYMBOL=SOLUSDT
 INTERVAL_STATUS_SEC=1.5
 GRID_STEP_USD=1.0
@@ -245,9 +272,14 @@ TAKE_PROFIT_USD=1.0
 MAX_LADDERS=20
 QTY_PER_LADDER=1.0
 MAX_SPREAD_BPS=8
+MAX_DAILY_USDT=200.0 # סך ההון המקסימלי לשימוש ב-24 שעות
 CSV_FILE=trades.csv
 
-MODE=DRY
+# אם למפתח ה-API אין הרשאה לבדוק יתרה (שגיאה 401), סכום זה ישמש לבדיקה רכה לפני ביצוע פקודה.
+COPY_TRADE_ASSUMED_BALANCE=500.0
+
+# מצב: DRY / TESTNET / LIVE
+MODE=LIVE
 ```
 
 ⚠️ **לעולם אל תעלה את `.env` לגיטהאב** — הוא מוחרג אוטומטית ב־`.gitignore`.
@@ -262,7 +294,7 @@ MODE=DRY
 python bot.py
 ```
 
-### מצב מסחר אמיתי
+### מצב מסחר אמיתי (ב-Futures)
 
 ערוך את `.env`:
 
@@ -281,10 +313,14 @@ python bot.py
 ## 📊 דוגמה לפלט
 
 ```
-Starting SOL bot on SOLUSDT | Mode=DRY
-Mid=202.25 | Bid=202.20 Ask=202.30 | Spread=0.5bps | Base=203 | Open=1 | Buys=1 Sells=0 | Realized=$0.00
+Starting SOL bot on SOLUSDT | Mode=LIVE
+Broker ready.
+Base price (rounded): 199
+
+[WS] Connected.
+
+[ENTER LIVE] qty=0.1 @ ~198.6800 | open=1 | spread=0.50bps | orderId=164579406034
 ...
-Bye!
 ```
 
 ---
@@ -293,7 +329,7 @@ Bye!
 
 ```
 solana-grid-bot/
-├── bot.py              # קובץ הבוט הראשי
+├── bot.py              # קובץ הבוט הראשי (כעת עם קריאות API ידניות ל-Futures)
 ├── .env                # קובץ הגדרות (מוחרג מהגיט)
 ├── .gitignore          # קובץ החרגות
 ├── requirements.txt    # תלויות (ספריות נדרשות)
@@ -306,7 +342,8 @@ solana-grid-bot/
 ## 🧩 טכנולוגיות
 
 - Python 3.10+
-- Binance Connector (REST + WebSocket)
+- Direct Requests & HMAC Signature (עבור Futures API)
+- Binance Connector (משמש רק לשליפת מידע על הבורסה)
 - dotenv
 - requests
 - websocket-client
@@ -315,9 +352,10 @@ solana-grid-bot/
 
 ## 🧠 תוכניות עתידיות
 
+- **בטיחות והתמדה:** הטמעת מנגנון שמירת מצב (Serialization) לחידוש מסחר לאחר קריסה.
 - שליחת התראות לטלגרם 📲
 - לוח מעקב בזמן אמת 📈
-- מעבר דינמי בין אסטרטגיות (לונג / שורט)
+- תמיכה במסחר Short
 
 ---
 
@@ -329,5 +367,8 @@ solana-grid-bot/
 
 ### 💬 נבנה באהבה ❤️ על ידי [Shmuel18](https://github.com/Shmuel18)
 
-</div>
+\</div\>
+
+```
+
 ```
