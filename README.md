@@ -1,99 +1,94 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/github/explore/main/topics/solana/solana.png" width="80" />
+
+# ⚡ Solana Grid Bot
+
+### Intelligent Automated Futures Trading on Binance UM
+
+<p>
+<em>Continuous micro-profit execution, capital control, and volatility harvesting.</em>
+</p>
+
+<br>
+
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Exchange](https://img.shields.io/badge/Binance-UM%20Futures-yellow)
+![Mode](https://img.shields.io/badge/Mode-DRY%20%7C%20TESTNET%20%7C%20LIVE-red)
+![Status](https://img.shields.io/badge/Status-Production-ready-green)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
+
+</div>
+
 ---
 
-# ✨ Solana Grid Bot (Futures Edition) ✨
+## 🔥 Why This Bot?
 
-**Full-stack automation meets smart trading.**  
-A clean, efficient DCA-grid bot designed for **SOL/USDT** on Binance UM Futures, ready for **Lead Copy-Trading** deployment.
+Most DCA grid bots are bloated, overcomplicated, and fail under real volatility.  
+This bot is different:
+
+✅ Minimal latency (WebSockets)  
+✅ Micro profit-taking per ladder rung  
+✅ Daily capital guardrails  
+✅ Spread protection (bps)  
+✅ Copy-Trading friendly  
+✅ Zero dependencies beyond core libs
+
+It’s engineered for **reliable**, **controlled**, **continuous** accumulation.
 
 ---
 
-## 👤 About Me
+## 🚀 Core Logic (At a Glance)
 
-Hi, I’m Shmuel — a driven crypto-trader & developer from Tel-Aviv, blending code with capital-markets smarts.  
-I build tools that run while I sleep, so my money works—even when I don’t.
+Price drops → ladder buys
+Price rebounds → release profit
+Repeat forever
+
+Each ladder is independent — no “all-or-nothing” exits.
+
+---
+
+## 🧠 Architecture
+
+WebSocket → Live Quote Engine
+↓
+Price Logic → Grid Ladder Checks
+↓
+Order Manager → Signed REST Execution
+↓
+CSV Event Stream → Analytics / Backtest
 
 ---
 
 ## 🧰 Tech Stack
 
 - Python 3.10+
-- Binance UM Futures API
-- WebSockets
-- HMAC-signed REST
+- Binance REST (HMAC)
+- Binance WebSocket streams
+- CSV logging
+- dotenv config
 
-...
-
-**Tools & Libraries**
-
-- WebSockets for live feeds
-- HMAC & REST for order management
-- CSV logging + lightweight orchestration
+Lightweight, battle-tested, maintainable.
 
 ---
 
-## 🚀 Featured Project: Solana Grid Bot
-
-This project implements:
-
-- Laddered buy orders at fixed USD intervals.
-- Per-rung take-profit closes for swift gains.
-- Fully configurable via `.env`.
-- Supports DRY-run, TESTNET and LIVE modes.
-
----
-
-## ⚡ Highlights
-
-- **Symbol:** SOLUSDT
-- **Mode options:** DRY · TESTNET · LIVE
-- **Key safety features:** max daily deployable capital · spread threshold protection · manual risk cap
-- **Copy-Trading friendly:** built to lead, share signals, or auto-execute.
-
----
-
-## 📦 Project Structure
-
-```
+## 📦 Project Layout
 
 solana-grid-bot/
-├── bot.py
-├── requirements.txt
-├── .env                # config & secrets (git-ignored)
-├── trades.csv          # runtime log
-└── README.md
-
-```
+├─ bot.py # Main event loop + strategy
+├─ requirements.txt # Dependencies
+├─ .env # Secrets + dynamic config
+└─ trades.csv # Runtime trade ledger
 
 ---
 
-## 🔧 Getting Started
+## ⚙️ Configuration (`.env`)
 
-Clone and setup:
-
-```bash
-git clone https://github.com/Shmuel18/solana-grid-bot.git
-cd solana-grid-bot
-pip install -r requirements.txt
-```
-
-(Optional) Virtual environment:
-
-```bash
-python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-```
-
-Create `.env`:
-
-```dotenv
 BINANCE_API_KEY=your_key
 BINANCE_API_SECRET=your_secret
 
 SYMBOL=SOLUSDT
-MODE=DRY              # DRY | TESTNET | LIVE
+MODE=DRY # DRY | TESTNET | LIVE
 INTERVAL_STATUS_SEC=1.5
 GRID_STEP_USD=1.0
 TAKE_PROFIT_USD=1.0
@@ -103,257 +98,112 @@ MAX_SPREAD_BPS=8
 MAX_DAILY_USDT=200.0
 CSV_FILE=trades.csv
 COPY_TRADE_ASSUMED_BALANCE=500.0
-```
 
-Run the bot:
+---
 
-```bash
+## ▶️ Run
+
+Dry (no real orders):
+
+````bash
 python bot.py
-```
-
-Switch `MODE` to `TESTNET` or `LIVE` as needed.
-
----
-
-## 🛡️ Safety & Risk Management
-
-Trading futures is inherently risky.
-Before switching to LIVE:
-
-- Familiarize with margin, liquidation, leverage.
-- Align `MAX_LADDERS × QTY_PER_LADDER` to available balance.
-- Confirm `GRID_STEP_USD` and `TAKE_PROFIT_USD` match symbol volatility.
-- Use `MAX_DAILY_USDT` as hard stop for day-risk.
-- Test extensively in DRY and TESTNET modes.
-
----
-
-## ❓ FAQ
-
-**Can I change the symbol?**
-Yes — update `SYMBOL`, review min qty/step filters.
-
-**Does it handle shorts?**
-Not yet — currently LONG only.
-
-**Is testnet safe?**
-Yes — no real funds are at risk.
-
----
-
-## 🗺️ Roadmap
-
-- Multi-symbol support
-- Short grid mode
-- Adaptive step sizing by volatility
-- Telegram alerts & webhook integration
-- Dashboard with metrics & live view
-- Recovery and crash-resilience mode
-
----
-
-## 🤝 Contribute
-
-Pull requests and feedback are welcome.
-Please include:
-
-- Reproduction steps
-- Console logs (sanitized)
-- Expected vs actual behaviour
-
----
-
-## 📜 License
-
-MIT — free for personal or commercial use.
-
-> ⚠️ _Not financial advice. Trading crypto derivatives carries a risk of loss._
-
-````
-
----
 
 
-```markdown
+Testnet:
+
+MODE=TESTNET
+
+
+Production money:
+
+MODE=LIVE
+
+📊 Example Output
+[WS] Connected
+Base Price: 190
+Filled BUY ladder #3 @ 187.40
+Released profit rung #1 @ +$1.02
+Open ladders: 3 | Daily spent: $43.00
+
+
+Clear. Fast. Surgical.
+
+🛡 Safety Nets
+
+Max daily exposure cap
+
+Spread constraint
+
+Ladder limit
+
+Single-rung TP
+
+Dry run mode
+
+Testnet simulation
+
+Hard fail if clock drifted
+
+Because risk is a feature, not an afterthought.
+
+🐛 Troubleshooting
+Issue	Fix
+Orders not placed	Lower spread threshold
+Insufficient margin	Reduce ladder qty
+Timestamp rejected	Sync OS time
+Copy-Trading API restricted	Use assumed balance flag
+🧭 Roadmap
+
+Multi-symbol engine
+
+Short-grid mirrored logic
+
+Telegram live alerts
+
+Prometheus metrics
+
+Crash-resistant recovery
+
+Volatility adaptive ladder spacing
+
+🤝 Contributions
+
+PRs welcome — please include:
+
+Logs (sanitize secrets)
+
+Steps to reproduce
+
+Expected vs actual behavior
+
+⚠ Disclaimer
+
+This repository is for educational purposes only.
+Crypto derivatives involve significant risk.
+Trade responsibly.
+
+<div align="center"> <h3>🟣 Automate your profits, remove your emotions.</h3> <i>Built by someone who actually trades.</i> <br><br> ⭐ If this helped you — leave a star, it matters! </div>
+🇮🇱 גרסה בעברית
 <div dir="rtl">
+⚡ בוט גריד למסחר אוטומטי ב-SOLUM על Binance Futures
 
-# ✨ בוט גריד לסולאנה (גרסת Futures) ✨
+בוט קל, מהיר ויציב שמבצע:
 
-**אוטומציה מלאה + מסחר חכם.**
-בוט DCA-גריד אלגנטי ומבוסס קוד ל־SOL/USDT על Binance UM Futures, עם תמיכה מובנית ב-Lead Copy-Trading.
+קניות מדורגות בירידה
 
----
+סגירת רווחים קטנים בכל שלב
 
-## 👤 אודותי
+הגבלת הון יומית
 
-שלום, אני שמואל — סוחר קריפטו ומפתח מתל-אביב, שמחבר בין קוד לבין שוקי הון.
-אני יוצר כלים שרצים עבורך גם כשאתה ישן — **כדי שהכסף שלך יעבוד, גם כשאתה לא**.
-תחומי התשוקה שלי: אוטומציה · שליטה בסיכון · קוד נקי ומדויק.
+ניהול ספראד
 
----
+הרצה יבשה ו-Testnet
 
-## 🧰 טכנולוגיות
+כל אירוע נרשם ל-CSV לניתוח מאוחר.
 
-**שפות ופלטפורמות**
-- Python 3.10 ומעלה
-- API של Binance Futures (UM)
+הבוט מיועד לסקאלפינג מתמשך, רווחים קטנים מצטברים ושליטה מדויקת בסיכון.
 
-**כלים וספריות**
-- WebSocket לקבלת מחירים בזמן אמת
-- HMAC + REST לניהול הזמנות
-- רישום CSV + סקריפט פשוט לתפעול
+⚠ מסחר ממונף כרוך בסיכון — השתמש באחריות.
 
----
-
-## 🚀 פרויקט נבחר: בוט גריד לסולאנה
-
-הפרויקט כולל:
-- הזמנת קניות מדורגות בכל ירידת USD קבועה.
-- סגירת רווח מהירה בכל שלב בסולם.
-- התצורה דרך קובץ `.env`.
-- מצבי DRY ​| TESTNET ​| LIVE.
-
----
-
-## ⚡ נקודות בולטות
-
-- **מטבע יעד:** SOLUSDT
-- **מצבי הרצה:** DRY · TESTNET · LIVE
-- **מאפייני ביטחון מרכזיים:** הגבלת הון יומית · ספירת ספראד (bps) · בקרה ידנית
-- **Friendly Copy-Trading:** מיועד להובלה או לשיתוף אותות.
-
----
-
-## 📁 מבנה הפרויקט
-
+</div> ```
 ````
-
-solana-grid-bot/
-├── bot.py
-├── requirements.txt
-├── .env # קובץ הגדרות וסודות (לא ב-git)
-├── trades.csv # לוג הרצה בזמן אמת
-└── README.md
-
-````
-
----
-
-## 🔧 התחלת עבודה
-
-העתק והריץ:
-```bash
-git clone https://github.com/Shmuel18/solana-grid-bot.git
-cd solana-grid-bot
-pip install -r requirements.txt
-````
-
-(אופציונלי) סביבה וירטואלית:
-
-```bash
-python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-```
-
-יצירת קובץ `.env`:
-
-```dotenv
-BINANCE_API_KEY=המפתח_שלך
-BINANCE_API_SECRET=הסוד_שלך
-
-SYMBOL=SOLUSDT
-MODE=DRY              # DRY | TESTNET | LIVE
-INTERVAL_STATUS_SEC=1.5
-GRID_STEP_USD=1.0
-TAKE_PROFIT_USD=1.0
-MAX_LADDERS=20
-QTY_PER_LADDER=1.0
-MAX_SPREAD_BPS=8
-MAX_DAILY_USDT=200.0
-CSV_FILE=trades.csv
-COPY_TRADE_ASSUMED_BALANCE=500.0
-```
-
-להרצה:
-
-```bash
-python bot.py
-```
-
-לשינוי ל-TESTNET או LIVE — ערוך את `MODE`.
-
----
-
-## 🛡️ בדיקות בטיחות
-
-נסחרים במכשירים ממונפים? זה לא בדיחה.
-לפני מצב LIVE:
-
-- הבן עומק של מינוף, ליקווידציה ומצב שוק.
-- ודא ש־`MAX_LADDERS × QTY_PER_LADDER` מתאים לאיזון שלך.
-- התאמן בסביבת DRY וב־TESTNET עד שאתה מרגיש נוח.
-- קבע תקרה יומית (`MAX_DAILY_USDT`) כהגנת סיכון.
-- ודא שהשעון במחשב מסונכרן.
-
----
-
-## 🐛 תקלות נפוצות
-
-| תקלה נפוצה                   | פתרון מוצע                                |
-| ---------------------------- | ----------------------------------------- |
-| שגיאת Timestamp / recvWindow | סנכרן זמן המערכת                          |
-| הזמנות לא מתבצעות            | הגדל `MAX_SPREAD_BPS` או תקן גריד         |
-| “Insufficient margin” במימון | הקטן את `MAX_LADDERS` או `QTY_PER_LADDER` |
-| מפתח Copy-Trading מוגבל      | השתמש ב־`COPY_TRADE_ASSUMED_BALANCE`      |
-
----
-
-## 🧠 שאלות נפוצות
-
-**האם אפשר לשנות מטבע?**
-כן — שנה את `SYMBOL` אך התאמה של פרמטרים חיווי נדרשת.
-
-**תומך בשורט?**
-כרגע לא — בפיתוח.
-
-**האם TESTNET בטוח?**
-כן — ללא סיכון כספי אמיתי.
-
----
-
-## 🗺️ מפת דרכים (Roadmap)
-
-- תמיכה במספר מטבעות בו-זמנית
-- גריד שורט (Short-grid)
-- התאמת שלבים דינמית לפי וולטיליות
-- התראות דרך Telegram / Webhook
-- Dashboard גרפי / Metrics
-- מצב התאוששות לאחר כשל (Crash-Recovery)
-
----
-
-## 🤝 תרומה
-
-ברוכים הבאים — PRים ו-Issues מתקבלים בברכה.
-בבקשה כלל:
-
-- תחביר לשחזור
-- לוגים (ללא מפתחות)
-- תיאור השוני בין צפוי לבין ממשי
-
----
-
-## 📜 רישיון
-
-MIT — שימוש חופשי (בהתאם)
-
-> ⚠️ _הודעת סיכון:_
-> הפרויקט למטרות לימוד בלבד. עסקה בקריפטו ממונפת כרוכה בסיכון גבוה במיוחד — כל הכסף עלול ללכת!
-
-</div>
-```
-
----
