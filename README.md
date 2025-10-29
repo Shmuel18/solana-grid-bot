@@ -198,7 +198,6 @@ MIT — open for commercial & personal use.
 ⭐ If this helped you — give it a star!
 </div>
 
-🇮🇱 גרסה בעברית (תקציר)
 <div dir="rtl">
 ⚡ בוט גריד אוטומטי למסחר ב-SOL על Binance Futures
 בוט קל, מהיר ויציב המיועד ליצירת רווחים קטנים באופן רציף:
