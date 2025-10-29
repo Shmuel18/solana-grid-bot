@@ -6,16 +6,16 @@
 
 ### Intelligent Automated Futures Trading on Binance UM
 
-<p>
 <em>Continuous micro-profit execution, capital control, and volatility harvesting.</em>
-</p>
 
 <br>
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Exchange](https://img.shields.io/badge/Binance-UM%20Futures-yellow)
 ![Mode](https://img.shields.io/badge/Mode-DRY%20%7C%20TESTNET%20%7C%20LIVE-red)
-![Status](https://img.shields.io/badge/Status-Production-ready-green)
+![Status](https://img.shields.io/badge/Status-Active%20Development-brightgreen)
+![Last Commit](https://img.shields.io/github/last-commit/Shmuel18/solana-grid-bot?color=orange)
+![Stars](https://img.shields.io/github/stars/Shmuel18/solana-grid-bot?style=social)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 </div>
@@ -24,71 +24,73 @@
 
 ## 🔥 Why This Bot?
 
-Most DCA grid bots are bloated, overcomplicated, and fail under real volatility.  
-This bot is different:
+Most trading bots are:
+❌ too complex  
+❌ unreliable under volatility  
+❌ emotionally influenced
 
-✅ Minimal latency (WebSockets)  
-✅ Micro profit-taking per ladder rung  
-✅ Daily capital guardrails  
-✅ Spread protection (bps)  
-✅ Copy-Trading friendly  
-✅ Zero dependencies beyond core libs
+**This bot is:**
+✅ Simple  
+✅ Fast  
+✅ Emotionless  
+✅ Capital-protected
 
-It’s engineered for **reliable**, **controlled**, **continuous** accumulation.
+Designed specifically for constant micro-profits and controlled exposure.
 
 ---
 
-## 🚀 Core Logic (At a Glance)
+## 🚀 How It Works
 
-Price drops → ladder buys
-Price rebounds → release profit
+Price dips → Buy ladder rung
+Price rises → Take profit on that rung
 Repeat forever
 
-Each ladder is independent — no “all-or-nothing” exits.
+Each rung is independent.  
+No "all-in" bombs.  
+No panic.
 
 ---
 
-## 🧠 Architecture
+## 🧠 Architecture Overview
 
-WebSocket → Live Quote Engine
+WebSocket Stream → Real-time Quotes
 ↓
-Price Logic → Grid Ladder Checks
+Grid Logic → Ladder Checks & Spread Control
 ↓
-Order Manager → Signed REST Execution
+Order Manager → HMAC-Signed REST Execution
 ↓
-CSV Event Stream → Analytics / Backtest
+CSV Ledger → Backtest & Analytics
 
 ---
 
 ## 🧰 Tech Stack
 
 - Python 3.10+
-- Binance REST (HMAC)
-- Binance WebSocket streams
-- CSV logging
-- dotenv config
-
-Lightweight, battle-tested, maintainable.
+- Binance Futures REST (HMAC)
+- Python WebSockets
+- dotenv configuration
+- CSV audit logging
 
 ---
 
-## 📦 Project Layout
+## 📦 Project Structure
 
 solana-grid-bot/
-├─ bot.py # Main event loop + strategy
+├─ bot.py # Core logic & event loop
 ├─ requirements.txt # Dependencies
-├─ .env # Secrets + dynamic config
+├─ .env # Secrets & dynamic config
 └─ trades.csv # Runtime trade ledger
 
 ---
 
 ## ⚙️ Configuration (`.env`)
 
+```dotenv
 BINANCE_API_KEY=your_key
 BINANCE_API_SECRET=your_secret
 
 SYMBOL=SOLUSDT
-MODE=DRY # DRY | TESTNET | LIVE
+MODE=DRY                  # DRY | TESTNET | LIVE
 INTERVAL_STATUS_SEC=1.5
 GRID_STEP_USD=1.0
 TAKE_PROFIT_USD=1.0
@@ -99,111 +101,132 @@ MAX_DAILY_USDT=200.0
 CSV_FILE=trades.csv
 COPY_TRADE_ASSUMED_BALANCE=500.0
 
----
 
-## ▶️ Run
+.gitignore already protects your secrets.
 
-Dry (no real orders):
 
-````bash
+▶️ Running the Bot
+Dry run (no real money):
 python bot.py
 
-
-Testnet:
-
+Switch to Testnet inside .env:
 MODE=TESTNET
 
-
-Production money:
-
+Production:
 MODE=LIVE
 
-📊 Example Output
+
+📊 Sample Runtime Output
 [WS] Connected
-Base Price: 190
+Base price: 190
 Filled BUY ladder #3 @ 187.40
 Released profit rung #1 @ +$1.02
 Open ladders: 3 | Daily spent: $43.00
 
+Clean, surgical, data-driven.
 
-Clear. Fast. Surgical.
+🛡 Safety Systems
 
-🛡 Safety Nets
 
-Max daily exposure cap
+Max daily exposure guard
 
-Spread constraint
+
+Spread threshold
+
 
 Ladder limit
 
-Single-rung TP
 
-Dry run mode
+Clock drift protection
 
-Testnet simulation
 
-Hard fail if clock drifted
+Dry mode simulation
 
-Because risk is a feature, not an afterthought.
+
+Testnet environment
+
+
+Risk isn’t an afterthought — it’s engineered in.
 
 🐛 Troubleshooting
-Issue	Fix
-Orders not placed	Lower spread threshold
-Insufficient margin	Reduce ladder qty
-Timestamp rejected	Sync OS time
-Copy-Trading API restricted	Use assumed balance flag
+IssueFixOrders ignoredIncrease MAX_SPREAD_BPSInsufficient marginReduce ladder qty or ladder countTimestamp rejectedSync OS timeCopy-Trading restrictedUse assumed balance flag
+
 🧭 Roadmap
 
-Multi-symbol engine
+
+Multi-symbol grid
+
 
 Short-grid mirrored logic
 
-Telegram live alerts
 
-Prometheus metrics
+Telegram alerts
+
+
+Prometheus metrics dashboard
+
 
 Crash-resistant recovery
 
-Volatility adaptive ladder spacing
+
+Volatility-adaptive spacing
+
+
 
 🤝 Contributions
+PRs welcome.
+Please include:
 
-PRs welcome — please include:
 
-Logs (sanitize secrets)
+Sanitized logs
+
 
 Steps to reproduce
 
-Expected vs actual behavior
 
-⚠ Disclaimer
+Expected vs Actual output
 
-This repository is for educational purposes only.
-Crypto derivatives involve significant risk.
-Trade responsibly.
 
-<div align="center"> <h3>🟣 Automate your profits, remove your emotions.</h3> <i>Built by someone who actually trades.</i> <br><br> ⭐ If this helped you — leave a star, it matters! </div>
-🇮🇱 גרסה בעברית
+
+📜 License
+MIT — open for commercial & personal use.
+
+<div align="center">
+<h3>🟣 Automate your profits. Remove your emotions.</h3>
+<i>Built by someone who actually trades.</i>
+<br><br>
+⭐ If this helped you — give it a star!
+</div>
+
+🇮🇱 גרסה בעברית (תקציר)
 <div dir="rtl">
-⚡ בוט גריד למסחר אוטומטי ב-SOLUM על Binance Futures
+⚡ בוט גריד אוטומטי למסחר ב-SOL על Binance Futures
+בוט קל, מהיר ויציב המיועד ליצירת רווחים קטנים באופן רציף:
 
-בוט קל, מהיר ויציב שמבצע:
 
-קניות מדורגות בירידה
+קניות מדורגות בירידות
 
-סגירת רווחים קטנים בכל שלב
 
-הגבלת הון יומית
+סגירת רווח בכל שלב בנפרד
 
-ניהול ספראד
 
-הרצה יבשה ו-Testnet
+שליטה בהון יומי
 
-כל אירוע נרשם ל-CSV לניתוח מאוחר.
 
-הבוט מיועד לסקאלפינג מתמשך, רווחים קטנים מצטברים ושליטה מדויקת בסיכון.
+הגנת מרווח (Spread)
 
-⚠ מסחר ממונף כרוך בסיכון — השתמש באחריות.
 
-</div> ```
-````
+תמיכה ב-DRY ו-TESTNET
+
+
+כל פעולה נרשמת ל-CSV לטובת ניתוח ו-Backtesting.
+מיועד לסוחרים שרוצים:
+✅ יציבות
+✅ פחות רגשות
+✅ אוטומציה מלאה
+✅ רווחיות מצטברת לאורך היום
+
+⚠ מסחר ממונף כרוך בסיכון. השתמש באחריות.
+
+</div>
+```
