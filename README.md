@@ -194,15 +194,14 @@ MIT — open for commercial & personal use.
 <div align="center">
 <h3>🟣 Automate your profits. Remove your emotions.</h3>
 <i>Built by someone who actually trades.</i>
-<br><br>
+<br/><br/>
 ⭐ If this helped you — give it a star!
 </div>
 
-<br>
+<br/><br/>
 
 
-<!-- HEBREW SECTION: paste as-is -->
-<div dir="rtl">
+<div dir="rtl" style="direction: rtl; text-align: right;">
 
 <h2>⚡ בוט גריד אוטומטי למסחר ב-SOL על Binance Futures</h2>
 <p><strong>מערכת מסחר אוטומטית</strong> שמבצעת קניות מדורגות בירידות, מממשת רווחים קטנים בעליות, ומאפשרת מסחר רציף ללא מעורבות רגשית — תוך שמירה על גבולות סיכון ברורים.</p>
@@ -220,36 +219,35 @@ MIT — open for commercial & personal use.
 
 <h3>🧬 איך זה עובד?</h3>
 <pre>מחיר יורד → קניית שלב קטן (Ladder)
-מחיר עולה → מימוש רווח על אותו שלב
+מחיר עולה → מימוש רווח רק על אותו שלב
 …וחוזר בלולאה אוטומטית</pre>
-<p>כל שלב מנוהל בנפרד — אין “הכול תלוי בפקודה אחת”.</p>
+<p>כל שלב מנוהל בנפרד — אין "הכל תלוי בפקודה אחת".</p>
 
 <h3>🛡 מנגנוני הגנה</h3>
 <ul>
   <li>🛑 הגבלת חשיפה יומית (<code>MAX_DAILY_USDT</code>)</li>
   <li>📏 בדיקת מרווח (Spread) לפני ביצוע (<code>MAX_SPREAD_BPS</code>)</li>
   <li>🧱 מספר שלבים מקסימלי (<code>MAX_LADDERS</code>)</li>
-  <li>⏱ בדיקת סטיית זמן כדי למנוע שגיאות חתימה</li>
-  <li>🧪 DRY Mode — הרצה ללא כסף אמיתי</li>
+  <li>⏱ בדיקת סטיית זמן לחתימות מדויקות</li>
+  <li>🧪 DRY Mode — סימולציה ללא כסף אמיתי</li>
   <li>🧵 Testnet — סביבת ניסוי בחינם</li>
 </ul>
 
 <h3>📊 רשומות וניתוח</h3>
-<p>כל עסקה נרשמת לקובץ <code>CSV</code> (תאריך, מחיר, רווח, מזהה שלב). מאפשר ניתוח אמיתי ו-Backtesting על הנתונים שלך.</p>
+<p>כל עסקה נרשמת לקובץ <code>CSV</code> לטובת Backtesting, ניתוח רווחיות ותיעוד.</p>
 
 <h3>💡 טיפים לשימוש נבון</h3>
 <ul>
   <li>התאם את <code>GRID_STEP_USD</code> לתנודתיות היומית</li>
-  <li>הגדל בהדרגה את <code>MAX_LADDERS</code> — לא ביום אחד</li>
+  <li>הגדל בהדרגה את <code>MAX_LADDERS</code></li>
   <li>עבוד במסלול DRY → Testnet → Live</li>
-  <li>נתח את ה-CSV אחת לכמה ימים ושפר פרמטרים</li>
+  <li>נתח רווחים בקובץ ה-CSV אחת לכמה ימים</li>
 </ul>
 
 <h3>⚠ אזהרת סיכון</h3>
-<p>מסחר בחוזים ממונפים עלול לגרום להפסד כספי משמעותי. הקוד נועד ללמידה, בדיקה והתנסות — על אחריות המשתמש בלבד.</p>
+<p>מסחר בחוזים ממונפים עלול לגרום להפסדים משמעותיים. הקוד נועד ללמידה והתנסות — על אחריות המשתמש בלבד.</p>
 
-<p style="margin-top:16px;"><em>✨ מסחר חכם מתחיל ממערכות שלא מתעייפות.</em></p>
+<p><em>✨ מסחר חכם מתחיל ממערכות שלא מתעייפות.</em></p>
 
 </div>
-
 ```
