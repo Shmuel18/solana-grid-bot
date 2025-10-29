@@ -85,7 +85,7 @@ solana-grid-bot/
 
 ## ⚙️ Configuration (`.env`)
 
-```dotenv
+```ini
 BINANCE_API_KEY=your_key
 BINANCE_API_SECRET=your_secret
 
@@ -100,6 +100,7 @@ MAX_SPREAD_BPS=8
 MAX_DAILY_USDT=200.0
 CSV_FILE=trades.csv
 COPY_TRADE_ASSUMED_BALANCE=500.0
+
 
 
 .gitignore already protects your secrets.
