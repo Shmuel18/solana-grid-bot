@@ -2,8 +2,11 @@
 
 import datetime
 import json
-import logging
 import os
+
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
@@ -28,10 +31,12 @@ class BotState:
 
 def save_state(state_file: str, state: Dict[str, Any]) -> None:
     """Save bot state to file atomically."""
+    logger.debug(f"Saving state to {state_file}")
     tmp = state_file + ".tmp"
     with open(tmp, "w") as f:
         json.dump(state, f, indent=4)
     os.replace(tmp, state_file)
+    logger.debug("State saved successfully")
 
 
 def load_state(state_file: str, default: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
@@ -54,13 +59,14 @@ def load_state(state_file: str, default: Optional[Dict[str, Any]] = None) -> Opt
             return data
                 
     except Exception as e:
-                    logging.exception("Failed to load state: %s", e)
+                    logger.exception("Failed to load state: %s", e)
         
     return default
 
 
 def get_current_state() -> BotState:
     """Get the current bot state."""
+    logger.debug("Loading current bot state")
     raw_state = load_state(config.state_file, default={
         "base_price": 0.0,
         "positions": [],

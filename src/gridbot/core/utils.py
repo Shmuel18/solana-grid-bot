@@ -2,23 +2,18 @@
 
 import csv
 import datetime
-import logging
 import os
 import threading
 from typing import List
+
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 import requests
 from requests import Response
 
 from ..config.settings import config
-
-
-def init_logging() -> None:
-    """Initialize logging configuration."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] %(levelname)s: %(message)s"
-    )
 
 
 def spread_bps(bid: float, ask: float) -> float:
@@ -78,13 +73,13 @@ def request_with_retry(method: str, url: str, *, headers=None, data=None, params
             if i == retries - 1:
                 raise
             if i == 0:
-                logging.warning(f"[HTTP RETRY] {method} {url} failed ({e.response.status_code}). Retrying...")
+                logger.warning(f"[HTTP RETRY] {method} {url} failed ({e.response.status_code}). Retrying...")
             threading.Event().wait(wait)
             delay = min(delay * 2, 8.0)
         except requests.exceptions.RequestException as e:
             if i == retries - 1:
                 raise
             if i == 0:
-                logging.warning(f"[HTTP RETRY] {method} {url} failed ({e.__class__.__name__}). Retrying...")
+                logger.warning(f"[HTTP RETRY] {method} {url} failed ({e.__class__.__name__}). Retrying...")
             threading.Event().wait(delay)
             delay = min(delay * 2, 8.0)

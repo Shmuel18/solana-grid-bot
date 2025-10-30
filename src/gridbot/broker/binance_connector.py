@@ -3,9 +3,13 @@
 from decimal import ROUND_DOWN, Decimal
 import hmac
 import hashlib
-import logging
 import time
 import uuid
+import logging
+
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 from typing import Dict, Optional
 from urllib.parse import urlencode
 
@@ -33,9 +37,9 @@ def sync_server_time() -> None:
         server_time = int(r.json().get("serverTime", 0))
         local_time = int(time.time() * 1000)
         _server_time_offset_ms = server_time - local_time
-        logging.info(f"Server-local offset: {_server_time_offset_ms} ms")
+        logger.info(f"Server-local offset: {_server_time_offset_ms} ms")
     except Exception as e:
-        logging.warning(f"Time sync failed: {e}")
+        logger.warning(f"Time sync failed: {e}")
 
 
 def _decimal_places(step: float) -> int:
@@ -88,7 +92,7 @@ class BinanceConnector:
         try:
             sym = self._futures_exchange_info(config.symbol)
         except Exception as e:
-            logging.warning(f"Exchange info failed, using defaults: {e}")
+            logger.warning(f"Exchange info failed, using defaults: {e}")
             sym = {
                 "filters": [
                     {"filterType": "PRICE_FILTER", "tickSize": "0.01"},
@@ -165,7 +169,7 @@ class BinanceConnector:
             self.price_prec = _decimal_places(self.tick_size)
             self.qty_prec = _decimal_places(self.step_size)
         except Exception as e:
-            logging.warning(f"Failed to refresh filters: {e}")
+            logger.warning(f"Failed to refresh filters: {e}")
 
     def detect_position_mode(self) -> bool:
         """Detect if account is in hedge mode."""
@@ -180,7 +184,7 @@ class BinanceConnector:
             r = request_with_retry('GET', url, headers=headers)
             return bool(r.json().get("dualSidePosition", False))
         except Exception as e:
-            logging.warning(f"Position mode detection failed: {e}")
+            logger.warning(f"Position mode detection failed: {e}")
             return False
 
     def set_position_mode(self, want_hedge: bool) -> bool:
@@ -302,6 +306,28 @@ class BinanceConnector:
         except Exception:
             return 0.0
 
+    def get_ticker(self, symbol: str) -> dict:
+        """Get current ticker data (bid/ask/mid) via REST API."""
+        url = f"{config.futures_base_url}/ticker/bookTicker"
+        
+        r = request_with_retry('GET', url, params={"symbol": symbol})
+        data = r.json()
+        
+        bid = float(data.get("bidPrice", 0.0) or 0.0)
+        ask = float(data.get("askPrice", 0.0) or 0.0)
+        
+        if bid == 0.0 or ask == 0.0:
+            raise RuntimeError("Invalid ticker data received")
+            
+        mid = (bid + ask) / 2.0
+            
+        return {
+            "symbol": symbol,
+            "bid": bid,
+            "ask": ask,
+            "mid": mid
+        }
+
     def futures_order(self, params: dict, is_open: bool) -> dict:
         """Place futures order with automatic error handling."""
         def _do(p):
@@ -324,7 +350,7 @@ class BinanceConnector:
 
             # Handle -1021: timestamp error
             if '"code":-1021' in txt or "-1021" in txt:
-                logging.info("-1021: syncing server time and retrying once...")
+                logger.info("-1021: syncing server time and retrying once...")
                 sync_server_time()
                 try:
                     p2 = dict(params)
@@ -332,11 +358,11 @@ class BinanceConnector:
                     p2['recvWindow'] = 15000
                     return _do(p2).json()
                 except Exception as ee:
-                    logging.error(f"Retry -1021 failed: {getattr(ee, 'response', None) and getattr(ee.response, 'text', '')}")
+                    logger.error(f"Retry -1021 failed: {getattr(ee, 'response', None) and getattr(ee.response, 'text', '')}")
 
             # Handle -1111: precision/quantity error 
             if '"code":-1111' in txt or "-1111" in txt:
-                logging.info("-1111: refreshing filters + reclamp qty/price and retrying once...")
+                logger.info("-1111: refreshing filters + reclamp qty/price and retrying once...")
                 try:
                     self.refresh_symbol_filters()
                     p2 = dict(params)

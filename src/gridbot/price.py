@@ -1,8 +1,11 @@
 """Price streaming and management."""
 
 import json
-import logging
 import queue
+
+from .utils.logger import get_logger
+
+logger = get_logger(__name__)
 import threading
 import time
 from dataclasses import dataclass
@@ -68,19 +71,19 @@ class WebSocketManager:
             tick = PriceTick(bid=bid, ask=ask, mid=mid, timestamp=time.time())
             self.price_queue.put(tick)
         except Exception as e:
-            logging.warning(f"Failed to process WS message: {e}")
+            logger.warning(f"Failed to process WS message: {e}")
 
     def on_error(self, ws, error: Exception) -> None:
         """Handle WebSocket error."""
-        logging.error(f"WebSocket error: {error}")
+        logger.error(f"WebSocket error: {error}")
 
     def on_close(self, ws, close_status_code: int, close_msg: str) -> None:
         """Handle WebSocket close."""
-        logging.info(f"WebSocket closed: {close_status_code} {close_msg}")
+        logger.info(f"WebSocket closed: {close_status_code} {close_msg}")
 
     def on_open(self, ws) -> None:
         """Handle WebSocket open."""
-        logging.info("WebSocket connected")
+        logger.info("WebSocket connected")
         self.reconnect_delay = config.reconnect_min
 
     def _run_websocket(self) -> None:
@@ -99,13 +102,13 @@ class WebSocketManager:
                     ping_timeout=config.ping_timeout
                 )
             except Exception as e:
-                logging.error(f"WebSocket error: {e}")
+                logger.error(f"WebSocket error: {e}")
 
             if self.stop_evt.is_set():
                 break
 
             delay = min(self.reconnect_delay, config.reconnect_max)
-            logging.info(f"Reconnecting in {delay:.1f}s...")
+            logger.info(f"Reconnecting in {delay:.1f}s...")
             time.sleep(delay)
             self.reconnect_delay = min(self.reconnect_delay * 2, config.reconnect_max)
 
@@ -145,7 +148,7 @@ class RestPriceManager:
             mid = float(ticker.get("mid", (bid + ask) / 2.0))
             return PriceTick(bid=bid, ask=ask, mid=mid, timestamp=time.time())
         except Exception as e:
-            logging.warning(f"REST price fetch failed: {e}")
+            logger.warning(f"REST price fetch failed: {e}")
             return None
 
     def _run_price_refresh(self) -> None:
@@ -159,7 +162,7 @@ class RestPriceManager:
                 tick = self._fetch_price()
                 if tick:
                     self.price_queue.put(tick)
-                    logging.debug(
+                    logger.debug(
                         f"WS silent for {time_since_last_ws:.1f}s; "
                         "using REST prices"
                     )

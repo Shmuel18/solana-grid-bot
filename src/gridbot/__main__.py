@@ -7,13 +7,15 @@ import signal
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 from . import BinanceConnector
 from .broker.notifications import send_telegram_message
 from .config.settings import config
 from .core.grid_logic import align_to_grid, compute_grid_levels
-from .core.utils import init_csv, init_logging, log_trade
+from .core.utils import init_csv, log_trade
+from .utils.logger import setup_logger, get_logger
 from .price import PriceManager
 from .state.manager import get_current_state, save_state
 
@@ -145,6 +147,10 @@ class GridBot:
                 except Exception:
                     time.sleep(1.0)
                     continue
+                
+                # --- השינוי שהוספנו להצגת המחיר ---
+                logging.info(f"Price: Mid={mid:.4f} (Bid={bid:.4f}, Ask={ask:.4f})")
+                # ------------------------------------
 
                 self.process_grid(bid, ask, mid)
                 time.sleep(0.1)
@@ -174,13 +180,21 @@ class GridBot:
         pass
 
 
+logger = get_logger(__name__)
+
 def main() -> None:
     """Main entry point."""
-    init_logging()
+    # Initialize logging with both console and file output
+    setup_logger(
+        log_level="INFO",
+        log_file=Path("logs/gridbot.log"),
+        log_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logger.info("Starting GridBot...")
     args = parse_args()
 
     if not args.dry_run and not args.confirm_live:
-        logging.error(
+        logger.error(
             "Live trading requested but --confirm-live not provided. "
             "Exiting to avoid accidental live orders."
         )
@@ -193,7 +207,7 @@ def main() -> None:
     bot.initialize()
     
     def signal_handler(signum: int, frame) -> None:
-        logging.info(f"Received signal {signum}, initiating shutdown...")
+        logger.info(f"Received signal {signum}, initiating shutdown...")
         bot.stop_evt.set()
 
     signal.signal(signal.SIGINT, signal_handler)
