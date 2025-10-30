@@ -65,291 +65,123 @@ C:\> .venv\Scripts\activate
 ```
 
 אתה יכול לשנות פרמטרים כמו `mid`, `grid-size`, `spacing` ו‑`interval`:
+# GridBot
 
+A minimal grid trading bot for crypto futures, designed for reliability and safety.
+
+## Overview
+
+The original bot implementation has been reorganized into a clean Python package structure. Key improvements:
+
+- Proper package organization with `src/` layout
+- Clear separation of concerns
+- Improved state management
+- Enhanced price monitoring
+- Better configuration handling
+- Proper logging and notifications
+
+## Project Structure
+
+```
+src/gridbot/
+├── __init__.py        # Package initialization
+├── __main__.py        # CLI and entry point
+├── price.py           # Price stream management
+├── broker/            # Exchange interaction
+│   ├── binance_connector.py
+│   └── notifications.py
+├── config/            # Configuration
+│   └── settings.py
+├── core/              # Core logic
+│   ├── grid_logic.py
+│   └── utils.py
+└── state/             # State persistence
+    └── manager.py
+```
+
+## Installation
+
+Install in development mode:
 ```cmd
-.venv\Scripts\python.exe bot.py --mid 100 --grid-size 7 --spacing 0.5 --interval 1.0
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .
 ```
 
-הערה: במצב dry-run ה‑connector מחקה הזמנות ולכן אין סיכון כספי.
+## Configuration
 
-חיבור ל‑Testnet / אמיתי (זהירות)
-----------------------------------
-לפני חיבור ל‑Testnet/אמיתי — בצע בדיקות מלאות ותוודא שאתה מבין את הסיכונים.
+Create a `.env` file with your settings:
 
-להרצת Testnet (דוגמה): הגדר מפתחות טסט ב‑env ואז כבה את ה‑dry-run:
-
-```cmd
-set BINANCE_API_KEY=your_test_key
-set BINANCE_API_SECRET=your_test_secret
-.venv\Scripts\python.exe bot.py --no-dry-run --testnet
-```
-
-הערות חשובות לפני חיבור אמיתי:
-- ודא שה‑`binance_connector` כולל retry/backoff ו‑rate-limiting (כרגע יש צורך בשדרוג) 
-- התחל תמיד ב‑Testnet
-- הוסף הגבלות בטיחות (max notional, confirmation flag) לפני הפעלת פרודקשן
-
-קונפיג ו‑Env vars (חשובים)
----------------------------
-- `BINANCE_API_KEY` — מפתח API לבורסה (אל תשתף/אל תדחף לקוד)
-- `BINANCE_API_SECRET` — סוד ה‑API
-- `BINANCE_USE_TESTNET` — אם מוגדר ל‑`yes`/`true` נחבר ל‑testnet
-- `DRY_RUN` — אם מוגדר ל‑`no` לא נשתמש ב‑dry-run (אבל `bot.py` מציע `--no-dry-run` גם כן)
-- `STATE_PATH` — שם קובץ לשמירת מצב (ברירת מחדל: `bot_state.json`)
-- `CSV_FILE` — קובץ רישום עסקאות (ברירת מחדל: `trades.csv`)
-
-בדיקות ופיתוח
----------------
-- יש בדיקות בסיסיות ב‑`tests/` עבור `strategy.grid_logic`. הרץ עם `pytest`.
-- להרחבת הבדיקות: מומלץ להוסיף mocking ל‑`requests` כדי לבדוק `binance_connector` בלי לעשות קריאות רשת.
-
-נקודות בטיחות והמשך עבודה מומלצת
-----------------------------------
-1. הוסף retry/backoff ו‑rate-limiting ל‑`broker/binance_connector.py`.
-2. הוסף flag `--confirm-live` שמצריך אישור ידני לפני הפעלת מצב חי.
-3. הוסף לוגינג מתקדם ו‑rolling logs.
-4. שקול שימוש ב‑SQLite במקום CSV אם המצב גדל.
-5. כיסוי בדיקות ל‑state manager ובדיקות אינטגרציה מדומות.
-
-תרומה ופיתוח
---------------
-אם תרצה שאממש שדרוגים (retry/backoff, rate‑limiter, `--confirm-live`, שדרוג לביצועים אסינכרוניים), תגיד לי מה להוסיף ואיישם זאת עבורך.
-
-רישיון
--------
-קוד זה משוחרר כדוגמה — אין כאן אחריות על תוצאות מסחריות. השתמש על אחריותך.
-
-*** קצה README ***
-
-קבצים שיצרנו עבורך: `bot.py`, `run_demo.py`, `broker/binance_connector.py`, `strategy/grid_logic.py`, `state/manager.py`, `core/*`, `tests/*` ועוד. README זה נוצר כדי להנחות שימוש ראשוני ובדיקות בטוחות.
-
-*** סוף README ***
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/github/explore/main/topics/solana/solana.png" width="80" />
-
-# ⚡ Solana Grid Bot
-
-### Intelligent Automated Futures Trading on Binance UM
-
-<em>Continuous micro-profit execution, capital control, and volatility harvesting.</em>
-
-<br>
-
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![Exchange](https://img.shields.io/badge/Binance-UM%20Futures-yellow)
-![Mode](https://img.shields.io/badge/Mode-DRY%20%7C%20TESTNET%20%7C%20LIVE-red)
-![Status](https://img.shields.io/badge/Status-Active%20Development-brightgreen)
-![Last Commit](https://img.shields.io/github/last-commit/Shmuel18/solana-grid-bot?color=orange)
-![Stars](https://img.shields.io/github/stars/Shmuel18/solana-grid-bot?style=social)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
-
-</div>
-
----
-
-## 🔥 Why This Bot?
-
-Most trading bots are:
-❌ too complex  
-❌ unreliable under volatility  
-❌ emotionally influenced
-
-**This bot is:**
-✅ Simple  
-✅ Fast  
-✅ Emotionless  
-✅ Capital-protected
-
-Designed specifically for constant micro-profits and controlled exposure.
-
----
-
-## 🚀 How It Works
-
-```
-Price dips  → Buy ladder rung
-Price rises → Take profit on that rung
-Repeat forever
-```
-
-Each rung is independent — no full-position panic exits.
-
----
-
-## 🧠 Architecture Overview
-
-```
-WebSocket Stream → Real-time Quotes
-          ↓
-Grid Logic → Ladder Checks & Spread Control
-          ↓
-Order Manager → HMAC-Signed REST Execution
-          ↓
-CSV Ledger → Backtest & Analytics
-```
-
----
-
-## 🧰 Tech Stack
-
-- Python 3.10+
-- Binance Futures REST (HMAC)
-- Python WebSockets
-- dotenv configuration
-- CSV audit logging
-
----
-
-## 📦 Project Structure
-
-```
-solana-grid-bot/
-├─ bot.py                  # Core logic & event loop
-├─ requirements.txt        # Dependencies
-├─ .env                    # Secrets & dynamic config
-└─ trades.csv              # Runtime trade ledger
-```
-
----
-
-## ⚙️ Configuration (`.env`)
-
-```ini
-BINANCE_API_KEY=your_key
-BINANCE_API_SECRET=your_secret
-
+```env
+# Trading settings
 SYMBOL=SOLUSDT
-MODE=DRY                  # DRY | TESTNET | LIVE
-INTERVAL_STATUS_SEC=1.5
 GRID_STEP_USD=1.0
 TAKE_PROFIT_USD=1.0
 MAX_LADDERS=20
 QTY_PER_LADDER=1.0
 MAX_SPREAD_BPS=8
-MAX_DAILY_USDT=200.0
-CSV_FILE=trades.csv
-COPY_TRADE_ASSUMED_BALANCE=500.0
+MAX_DAILY_USDT=200
+
+# Exchange settings
+BINANCE_API_KEY=your_api_key
+BINANCE_API_SECRET=your_api_secret
+BINANCE_USE_TESTNET=no
+DRY_RUN=yes
+
+# Strategy settings
+STRATEGY_SIDE=LONG_ONLY
+MARGIN_MODE=ISOLATED
+
+# Optional Telegram notifications
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 ```
 
-> `.gitignore` already protects your secrets.
+## Usage
 
----
-
-## ▶️ Running the Bot
-
-Dry run (no real money):
-
-```bash
-python bot.py
+Run with default settings (dry run mode):
+```cmd
+python -m gridbot
 ```
 
-Switch to Testnet:
-
-```dotenv
-MODE=TESTNET
+Run with custom settings:
+```cmd
+python -m gridbot --mid 100 --grid-size 7 --spacing 0.5 --interval 1.0
 ```
 
-Production:
-
-```dotenv
-MODE=LIVE
+Run in live mode:
+```cmd
+python -m gridbot --no-dry-run --confirm-live
 ```
 
----
+## Safety Features
 
-## 📊 Sample Runtime Output
+- Dry run mode by default
+- Explicit confirmation needed for live trading
+- Position size limits
+- Daily spend limits
+- Spread monitoring
+- Price validation
+- Automatic error recovery
+- Atomic state persistence
 
-```
-[WS] Connected
-Base price: 190
-Filled BUY ladder #3 @ 187.40
-Released profit rung #1 @ +$1.02
-Open ladders: 3 | Daily spent: $43.00
-```
+## Development
 
----
+Suggestions for further development:
 
-## 🛡 Safety Systems
+1. Add comprehensive test suite
+2. Implement connection retries/backoff
+3. Add proper rate limiting
+4. Enhance logging with file rotation
+5. Add metrics collection
+6. Create monitoring dashboard
+7. Support multiple symbols
+8. Add volatility-based grid spacing
 
-- Max daily exposure guard
-- Spread threshold
-- Ladder limit
-- Clock drift protection
-- Dry mode simulation
-- Testnet environment
+## License
 
----
+MIT License
 
-## 🧭 Roadmap
+## Warning
 
-- Multi-symbol grid
-- Short-grid mirrored logic
-- Telegram alerts
-- Prometheus metrics dashboard
-- Crash-resistant recovery
-- Volatility-adaptive spacing
-
----
-
-## 🤝 Contributions
-
-PRs welcome.  
-Please include:
-
-- Sanitized logs
-- Steps to reproduce
-- Expected vs actual output
-
----
-
-## 📜 License
-
-MIT — open for commercial & personal use.
-
----
-
-<div align="center">
-<h3>🟣 Automate your profits. Remove your emotions.</h3>
-<i>Built by someone who actually trades.</i>
-<br><br>
-⭐ If this helped you — give it a star!
-</div>
-
-<br/><br/>
-
-<div dir="rtl" style="direction: rtl; text-align: right;">
-
-<h2>⚡ בוט גריד אוטומטי למסחר ב-SOL על Binance Futures</h2>
-<p><strong>מערכת מסחר אוטומטית</strong> שמבצעת קניות מדורגות בירידות, מממשת רווחים קטנים בעליות, ומאפשרת מסחר רציף ללא מעורבות רגשית — תוך שמירה על גבולות סיכון ברורים.</p>
-
-<h3>🎯 למה דווקא הבוט הזה?</h3>
-<ul>
-  <li>🔥 רווחים קטנים ומצטברים לאורך היום</li>
-  <li>🔒 שליטה חכמה בהון ובלימות סיכון</li>
-  <li>🤖 מסחר ללא רגש וללא שחיקה מנטלית</li>
-  <li>⚙️ לוגיקה עצמאית לכל שלב (Ladder)</li>
-  <li>🧠 התאמה טבעית לתנודתיות בשוק</li>
-</ul>
-
-<h3>🧬 איך זה עובד?</h3>
-<pre>מחיר יורד → קניית שלב קטן (Ladder)
-מחיר עולה → מימוש רווח רק על אותו שלב
-…וחוזר בלולאה אוטומטית</pre>
-
-<h3>🛡 מנגנוני הגנה</h3>
-<ul>
-  <li>🛑 הגבלת חשיפה יומית</li>
-  <li>📏 בדיקת מרווח (Spread) לפני ביצוע</li>
-  <li>🧱 מספר שלבים מקסימלי</li>
-  <li>⏱ בדיקת סטיית זמן לחתימות מדויקות</li>
-  <li>🧪 DRY Mode — סימולציה ללא כסף אמיתי</li>
-  <li>🧵 Testnet — סביבת ניסוי בחינם</li>
-</ul>
-
-<h3>⚠ אזהרת סיכון</h3>
-<p>מסחר בחוזים ממונפים עלול לגרום להפסדים משמעותיים. הקוד נועד ללמידה והתנסות — על אחריות המשתמש בלבד.</p>
-
-<p><em>✨ מסחר חכם מתחיל ממערכות שלא מתעייפות.</em></p>
-
-</div>
+Trading futures contracts carries significant risks. This code is for educational purposes and should be used with caution. Always test thoroughly in dry run and testnet modes before live trading.
