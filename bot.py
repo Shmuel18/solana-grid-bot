@@ -1,356 +1,127 @@
-# # bot.py — LIVE/Paper trading via Binance Futures Connector
-# # גרסה Production Ready: סנכרון זמן, רענון פילטרים, דיוקים, MIN_NOTIONAL, Backoff, Graceful Shutdown
-# # + Price Poller (REST) + WS Watchdog + Status line cleanup
+"""Runnable bot entrypoint (safe default: dry-run).
 
-# import os, time, json, threading, queue, csv, datetime, requests, math, uuid, signal, traceback
-# from typing import Dict, Tuple, List, Optional
-# from dotenv import load_dotenv
-# import websocket
-# import hmac, hashlib
-# from urllib.parse import urlencode
-# from decimal import Decimal, ROUND_DOWN, ROUND_FLOOR, ROUND_CEILING
+This file wires the skeleton modules into a minimal loop:
+- loads state
+- computes grid levels
+"""Minimal Grid Bot - clean implementation.
 
-# load_dotenv()
+Safe defaults: dry-run, demo mid provided via --mid or DEMO_MID env.
+To enable live trading you must pass `--no-dry-run` and `--confirm-live`.
+"""
+import argparse
+import logging
+import os
+import time
+from typing import Any, Dict
 
-# # ===== קונפיג =====
-# SYMBOL = os.getenv("SYMBOL", "SOLUSDT").upper()
-# STREAM_SYMBOL = SYMBOL.lower()
+from broker.binance_connector import BinanceConnector
+from core.utils import append_csv_row
+from state.manager import load_state, save_state
+from strategy.grid_logic import compute_grid_levels
 
-# GRID_STEP_USD = float(os.getenv("GRID_STEP_USD", "1.0"))
-# TAKE_PROFIT_USD = float(os.getenv("TAKE_PROFIT_USD", "1.0"))
-# MAX_LADDERS = int(os.getenv("MAX_LADDERS", "20"))
-# QTY_PER_LADDER = float(os.getenv("QTY_PER_LADDER", "1.0"))
 
-# MAX_SPREAD_BPS = float(os.getenv("MAX_SPREAD_BPS", "8"))
-# INTERVAL_STATUS_SEC = float(os.getenv("INTERVAL_STATUS_SEC", "1.5"))
+CSV_FILE = os.getenv("CSV_FILE", "trades.csv")
 
-# CSV_FILE = os.getenv("CSV_FILE", "trades.csv")
-# STATE_FILE = os.getenv("STATE_FILE", "bot_state.json")
 
-# PING_INTERVAL = 20.0
-# RECONNECT_MIN, RECONNECT_MAX = 1.0, 30.0
+def setup_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 
-# API_KEY = os.getenv("BINANCE_API_KEY", "")
-# API_SECRET = os.getenv("BINANCE_API_SECRET", "")
-# USE_TESTNET = os.getenv("BINANCE_USE_TESTNET", "no").lower() == "yes"
-# DRY_RUN = os.getenv("DRY_RUN", "yes").lower() == "yes"
-# COPY_TRADE_ASSUMED_BALANCE = float(os.getenv("COPY_TRADE_ASSUMED_BALANCE", "500.0"))
 
-# MAX_DAILY_USDT = float(os.getenv("MAX_DAILY_USDT", "200"))
-# TAKER_FEE = float(os.getenv("TAKER_FEE", "0.0005"))  # 5bps ברירת מחדל
+def make_connector(args: argparse.Namespace) -> BinanceConnector:
+    api_key = os.getenv("BINANCE_API_KEY", "")
+    api_secret = os.getenv("BINANCE_API_SECRET", "")
+    use_testnet = args.testnet
+    dry_run = args.dry_run
+    rate_limit = float(os.getenv("RATE_LIMIT_PER_SEC", "10"))
+    demo_mid = args.mid if args.dry_run else None
+    return BinanceConnector(api_key=api_key, api_secret=api_secret, use_testnet=use_testnet, dry_run=dry_run, rate_limit_per_sec=rate_limit, demo_mid=demo_mid)
 
-# # === טלגרם ===
-# TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-# TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-# # === אסטרטגיה וזיהוי מצב ===
-# STRATEGY_SIDE = os.getenv("STRATEGY_SIDE", "LONG_ONLY").upper()  # LONG_ONLY או SHORT_ONLY
-# if STRATEGY_SIDE not in ["LONG_ONLY", "SHORT_ONLY"]:
-#     print(f"[FATAL] Invalid STRATEGY_SIDE: {STRATEGY_SIDE}. Defaulting to LONG_ONLY.")
-#     STRATEGY_SIDE = "LONG_ONLY"
+def load_or_init_state(path: str) -> Dict[str, Any]:
+    s = load_state(path, default={"executed_levels": [], "meta": {}})
+    if s is None:
+        s = {"executed_levels": [], "meta": {}}
+    if "executed_levels" not in s:
+        s["executed_levels"] = []
+    return s
 
-# DESIRED_POSITION_MODE = os.getenv("DESIRED_POSITION_MODE", "").upper()  # "", "HEDGE", "ONEWAY"
 
-# # === מצב בטחונות ===
-# MARGIN_MODE = os.getenv("MARGIN_MODE", "ISOLATED").upper()  # CROSSED או ISOLATED
-# if MARGIN_MODE not in ["CROSSED", "ISOLATED"]:
-#     print(f"[FATAL] Invalid MARGIN_MODE: {MARGIN_MODE}. Defaulting to ISOLATED.")
-#     MARGIN_MODE = "ISOLATED"
+def log_trade_csv(side: str, price: float, qty: float, pnl: float, total: float, note: str = "") -> None:
+    row = [time.strftime("%Y-%m-%dT%H:%M:%S"), side, f"{price:.8f}", f"{qty:.8f}", f"{pnl:.8f}", f"{total:.8f}", note]
+    append_csv_row(CSV_FILE, row)
 
-# # --- קישורי Futures ו-WS ---
-# IS_TESTNET_FUT = USE_TESTNET
-# FUTURES_HTTP_BASE = "https://testnet.binancefuture.com" if IS_TESTNET_FUT else "https://fapi.binance.com"
-# FUTURES_BASE_URL  = f"{FUTURES_HTTP_BASE}/fapi/v1"
-# FUTURES_ACCOUNT_URL = f"{FUTURES_HTTP_BASE}/fapi/v2"
 
-# WS_HOST = "stream.binancefuture.com" if IS_TESTNET_FUT else "fstream.binance.com"
-# WS_URL  = f"wss://{WS_HOST}/ws/{STREAM_SYMBOL}@bookTicker"
+def run_loop(args: argparse.Namespace) -> None:
+    connector = make_connector(args)
+    state = load_or_init_state(args.state)
+    symbol = args.symbol
 
-# # ===== מצב (Status) =====
-# base_price = 0.0
-# positions: List[Dict] = []
-# realized_pnl = 0.0
-# total_buys = 0
-# total_sells = 0
-# spent_today = 0.0
-# spent_date = "1970-01-01"
+    grid = compute_grid_levels(args.mid, args.grid_size, args.spacing)
+    logging.info("Starting bot (dry_run=%s, testnet=%s) symbol=%s grid_size=%d spacing=%s", args.dry_run, args.testnet, symbol, args.grid_size, args.spacing)
+    logging.info("Grid levels: %s", grid)
 
-# msg_queue: "queue.Queue[Tuple[float,float,float]]" = queue.Queue(maxsize=1000)
+    try:
+        while True:
+            try:
+                ticker = connector.get_ticker(symbol)
+                price = ticker.get("mid") if ticker.get("mid") is not None else (ticker.get("bid", 0.0) + ticker.get("ask", 0.0)) / 2.0
+            except Exception as e:
+                logging.warning("Ticker fetch failed: %s", e)
+                time.sleep(args.interval)
+                continue
 
-# # ===== סנכרון זמן (לפתרון -1021) =====
-# _time_offset_ms = 0  # server - local
+            logging.info("Ticker mid price: %s", price)
 
-# def ts_ms() -> int:
-#     """החזרת timestamp מסונכרן לשרת (serverTime + offset)."""
-#     return int(time.time() * 1000 + _time_offset_ms)
+            for level in grid:
+                if level in state.get("executed_levels", []):
+                    continue
+                if price <= level:
+                    logging.info("Level touched: %s <= %s -> executing BUY (simulated=%s)", price, level, args.dry_run)
+                    order = connector.place_order(symbol, side="BUY", quantity=args.qty_per_order, price=level)
+                    logging.info("Order result: %s", order)
+                    state.setdefault("executed_levels", []).append(level)
+                    save_state(args.state, state)
+                    log_trade_csv("BUY", level, args.qty_per_order, 0.0, 0.0, note="simulated" if args.dry_run else "live")
 
-# def sync_server_time():
-#     global _time_offset_ms
-#     try:
-#         url = f"{FUTURES_BASE_URL}/time"
-#         r = requests.get(url, timeout=5)
-#         r.raise_for_status()
-#         server_time = int(r.json().get("serverTime", 0))
-#         local_time = int(time.time() * 1000)
-#         _time_offset_ms = server_time - local_time
-#         print(f"[TIME] server-local offset: {_time_offset_ms} ms")
-#     except Exception as e:
-#         print(f"[WARN] time sync failed: {e}")
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        logging.info("Interrupted by user, saving state and exiting.")
+        save_state(args.state, state)
 
-# # ===== רענון מחיר — ENV =====
-# PRICE_REFRESH_SEC = float(os.getenv("PRICE_REFRESH_SEC", "1.0"))  # מרווח פולים ב-REST
-# STALE_WS_SEC = float(os.getenv("STALE_WS_SEC", "10"))             # כמה שניות בלי טיקים עד שנחשב סטלי
 
-# # ===== טלגרם (שליחה לא-חוסמת) =====
-# def send_telegram_message(message: str):
-#     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-#         return
-#     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-#     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Minimal Grid Bot (safe default: dry-run)")
+    p.add_argument("--symbol", default=os.getenv("SYMBOL", "SOLUSDT"), help="Symbol (e.g. SOLUSDT)")
+    p.add_argument("--mid", type=float, default=float(os.getenv("DEMO_MID", "100.0")), help="Mid price to construct grid around")
+    p.add_argument("--grid-size", type=int, default=int(os.getenv("GRID_SIZE", "5")), help="Number of grid levels")
+    p.add_argument("--spacing", type=float, default=float(os.getenv("GRID_SPACING", "1.0")), help="Spacing between grid levels")
+    p.add_argument("--interval", type=float, default=float(os.getenv("POLL_INTERVAL", "2.0")), help="Polling interval seconds")
+    p.add_argument("--state", default=os.getenv("STATE_PATH", "bot_state.json"), help="Path to state file")
+    p.add_argument("--qty-per-order", type=float, default=float(os.getenv("QTY_PER_LADDER", "1.0")), help="Quantity per order")
+    p.add_argument("--no-dry-run", dest="dry_run", action="store_false", help="Disable dry-run and allow real API calls if credentials available")
+    p.add_argument("--testnet", action="store_true", help="Use Binance Futures testnet base URLs (only relevant when not dry-run)")
+    p.add_argument("--confirm-live", dest="confirm_live", action="store_true", help="Explicit confirmation to allow live trading when dry-run is disabled")
+    p.set_defaults(dry_run=True, confirm_live=False)
+    return p.parse_args()
 
-#     def _send_sync():
-#         try:
-#             requests.post(url, data=payload, timeout=5)
-#         except Exception as e:
-#             print(f"\n[TELEGRAM ERROR] {e}")
 
-#     threading.Thread(target=_send_sync, daemon=True).start()
+def main() -> None:
+    setup_logging()
+    args = parse_args()
 
-# # ===== CSV =====
-# def init_csv():
-#     new = not os.path.exists(CSV_FILE)
-#     with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
-#         w = csv.writer(f)
-#         if new:
-#             w.writerow(["time","side","price","qty","pnl","total_pnl","bid","ask","spread_bps","note"])
+    if not args.dry_run and not args.confirm_live:
+        logging.error("Live trading requested but --confirm-live not provided. Exiting to avoid accidental live orders.")
+        return
 
-# def log_trade(side: str, price: float, qty: float, pnl: float, total: float,
-#               bid: float, ask: float, spread_bps_val: float, note: str = ""):
-#     with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
-#         csv.writer(f).writerow([
-#             datetime.datetime.now().isoformat(timespec="seconds"),
-#             side, f"{price:.4f}", f"{qty:.6f}", f"{pnl:.4f}", f"{total:.4f}",
-#             f"{bid:.4f}", f"{ask:.4f}", f"{spread_bps_val:.3f}", note
-#         ])
+    # ensure DEMO_MID is set for dry-run flows
+    if args.dry_run:
+        os.environ.setdefault("DEMO_MID", str(args.mid))
 
-# # ===== Persistence =====
-# def save_state():
-#     state = {
-#         "base_price": base_price,
-#         "positions": positions,
-#         "realized_pnl": realized_pnl,
-#         "total_buys": total_buys,
-#         "total_sells": total_sells,
-#         "spent_today": spent_today,
-#         "spent_date": spent_date,
-#     }
-#     tmp = STATE_FILE + ".tmp"
-#     with open(tmp, "w") as f:
-#         json.dump(state, f, indent=4)
-#     os.replace(tmp, STATE_FILE)
+    run_loop(args)
 
-# def load_state():
-#     global base_price, positions, realized_pnl, total_buys, total_sells, spent_today, spent_date
-#     if os.path.exists(STATE_FILE):
-#         with open(STATE_FILE, "r") as f:
-#             try:
-#                 state = json.load(f)
-#                 base_price = state.get("base_price", base_price)
-#                 positions = state.get("positions", positions)
-#                 realized_pnl = state.get("realized_pnl", realized_pnl)
-#                 total_buys = state.get("total_buys", total_buys)
-#                 total_sells = state.get("total_sells", total_sells)
-#                 spent_today = state.get("spent_today", spent_today)
-#                 spent_date = state.get("spent_date", spent_date)
 
-#                 current_date = datetime.datetime.now().strftime("%Y-%m-%d")
-#                 if current_date != spent_date:
-#                     print(f"[INFO] Daily spent reset during load ({spent_date} -> {current_date}).")
-#                     spent_today = 0.0
-#                     spent_date = current_date
-
-#                 print(f"[STATE] Loaded state from {STATE_FILE}. Open positions: {len(positions)}")
-#                 return True
-#             except Exception as e:
-#                 print(f"[WARNING] Failed to load state: {e}. Starting fresh.")
-#                 return False
-#     return False
-
-# # ===== Helpers =====
-# def spread_bps(bid: float, ask: float) -> float:
-#     if ask <= 0: return 9999.0
-#     return (ask - bid) / ask * 10_000
-
-# def request_with_retry(method: str, url: str, *, headers=None, data=None, params=None, timeout=5.0, retries=3):
-#     delay = 0.5
-#     for i in range(retries):
-#         try:
-#             r = requests.request(method, url, headers=headers, data=data, params=params, timeout=timeout)
-#             r.raise_for_status()
-#             return r
-#         except requests.exceptions.HTTPError as e:
-#             ra = e.response.headers.get("Retry-After")
-#             if ra:
-#                 try:
-#                     wait = max(float(ra), delay)
-#                 except:
-#                     wait = delay
-#             else:
-#                 wait = delay
-#             if i == retries - 1:
-#                 raise
-#             if i == 0:
-#                 print(f"[HTTP RETRY] {method} {url} failed ({e.response.status_code}). Retrying...")
-#             time.sleep(wait)
-#             delay = min(delay * 2, 8.0)
-#         except requests.exceptions.RequestException as e:
-#             if i == retries - 1:
-#                 raise
-#             if i == 0:
-#                 print(f"[HTTP RETRY] {method} {url} failed ({e.__class__.__name__}). Retrying...")
-#             time.sleep(delay)
-#             delay = min(delay * 2, 8.0)
-
-# # שימוש ב-Futures endpoint
-# def get_initial_book(symbol: str) -> Tuple[float,float,float]:
-#     url = f"{FUTURES_BASE_URL}/ticker/bookTicker"
-#     r = request_with_retry('GET', url, params={"symbol": symbol})
-#     d = r.json()
-#     bid, ask = float(d["bidPrice"]), float(d["askPrice"])
-#     mid = (bid + ask) / 2.0
-#     return bid, ask, mid
-
-# def sign_request(params: dict) -> str:
-#     query_string = urlencode(params, True)
-#     signature = hmac.new(API_SECRET.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-#     return f"{query_string}&signature={signature}"
-
-# def _futures_exchange_info(symbol: str):
-#     url = f"{FUTURES_BASE_URL}/exchangeInfo"
-#     r = request_with_retry('GET', url, params={"symbol": symbol})
-#     j = r.json()
-#     return j["symbols"][0]
-
-# # יישור מחיר לבסיס הגריד (דינמי לפי צד)
-# def align_to_grid(mid: float, step: float, mode: str) -> float:
-#     if step <= 0: return mid
-#     dm = Decimal(str(mid))
-#     ds = Decimal(str(step))
-#     rounding_mode = ROUND_FLOOR if mode == 'LONG_ONLY' else ROUND_CEILING
-#     num_steps = (dm / ds)
-#     aligned = num_steps.to_integral_value(rounding=rounding_mode) * ds
-#     return float(aligned)
-
-# # עיגול/כימות לערכי צעד כמחרוזת מדויקת
-# def _decimal_places(step: float) -> int:
-#     ds = Decimal(str(step)).normalize()
-#     return -ds.as_tuple().exponent if ds.as_tuple().exponent < 0 else 0
-
-# def _format_to_step(x: float, step: float, mode=ROUND_DOWN) -> str:
-#     dx = Decimal(str(x))
-#     ds = Decimal(str(step))
-#     q = (dx / ds).to_integral_value(rounding=mode) * ds
-#     exp = _decimal_places(step)
-#     return format(q, f".{exp}f")
-
-# def _round_to_step_float(x: float, step: float, mode=ROUND_DOWN) -> float:
-#     return float(_format_to_step(x, step, mode=mode))
-
-# # ===== Broker =====
-# class Broker:
-#     def __init__(self):
-#         if DRY_RUN:
-#             self.is_hedge_mode = False
-#             self.step_size = 0.1
-#             self.tick_size = 0.01
-#             self.min_qty = 0.1
-#             self.min_notional = 5.0
-#             self.qty_prec = _decimal_places(self.step_size)
-#             self.price_prec = _decimal_places(self.tick_size)
-#             return
-
-#         try:
-#             sym = _futures_exchange_info(SYMBOL)
-#         except Exception as e:
-#             print(f"[WARN] exchangeInfo failed, using hardcoded defaults. {e}")
-#             sym = {"filters":[
-#                 {"filterType":"PRICE_FILTER","tickSize":"0.01"},
-#                 {"filterType":"LOT_SIZE","stepSize":"0.1","minQty":"0.1"},
-#                 {"filterType":"MIN_NOTIONAL","notional":"5.0"}
-#             ]}
-#         def get_filter(ft):
-#             for f in sym.get("filters", []):
-#                 if f.get("filterType") == ft:
-#                     return f
-#             return {}
-#         price_f   = get_filter("PRICE_FILTER")
-#         lot_f     = get_filter("LOT_SIZE")
-#         notional_f= get_filter("MIN_NOTIONAL")
-
-#         self.tick_size = float(price_f.get("tickSize", "0.01"))
-#         self.step_size = float(lot_f.get("stepSize",  "0.1"))
-#         self.min_qty   = float(lot_f.get("minQty",    "0.1"))
-#         self.min_notional = float(notional_f.get("notional", "5.0"))
-
-#         self.price_prec = _decimal_places(self.tick_size)
-#         self.qty_prec   = _decimal_places(self.step_size)
-
-#         self.is_hedge_mode = self.detect_position_mode()
-
-#         if DESIRED_POSITION_MODE in ("HEDGE", "ONEWAY"):
-#             want_hedge = (DESIRED_POSITION_MODE == "HEDGE")
-#             if want_hedge != self.is_hedge_mode:
-#                 ok = self.set_position_mode(want_hedge)
-#                 if ok:
-#                     self.is_hedge_mode = want_hedge
-#                 else:
-#                     send_telegram_message(
-#                         f"⚠️ Failed to set position mode to {DESIRED_POSITION_MODE}. "
-#                         f"Remain: *{'HEDGE' if self.is_hedge_mode else 'ONE-WAY'}*."
-#                     )
-
-#         if MARGIN_MODE != "ISOLATED":
-#             self.set_margin_mode(MARGIN_MODE)
-
-#         send_telegram_message(f"ℹ️ Position mode: *{'HEDGE' if self.is_hedge_mode else 'ONE-WAY'}* | Margin: *{MARGIN_MODE}*")
-
-#     # === רענון פילטרים ===
-#     def refresh_symbol_filters(self):
-#         try:
-#             sym = _futures_exchange_info(SYMBOL)
-#             def get_filter(ft):
-#                 for f in sym.get("filters", []):
-#                     if f.get("filterType") == ft:
-#                         return f
-#                 return {}
-#             price_f   = get_filter("PRICE_FILTER")
-#             lot_f     = get_filter("LOT_SIZE")
-#             notional_f= get_filter("MIN_NOTIONAL")
-
-#             self.tick_size = float(price_f.get("tickSize", self.tick_size))
-#             self.step_size = float(lot_f.get("stepSize",  self.step_size))
-#             self.min_qty   = float(lot_f.get("minQty",    self.min_qty))
-#             self.min_notional = float(notional_f.get("notional", self.min_notional))
-
-#             self.price_prec = _decimal_places(self.tick_size)
-#             self.qty_prec   = _decimal_places(self.step_size)
-#         except Exception as e:
-#             print(f"[WARN] refresh_symbol_filters failed: {e}")
-
-#     # ---- Margin Mode ----
-#     def set_margin_mode(self, margin_type: str) -> bool:
-#         try:
-#             params = {'timestamp': ts_ms(), 'recvWindow': 15000, 'symbol': SYMBOL, 'marginType': margin_type}
-#             signed = sign_request(params)
-#             headers = {'X-MBX-APIKEY': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded'}
-#             url = f"{FUTURES_BASE_URL}/marginType"
-#             request_with_retry('POST', url, headers=headers, data=signed.encode('utf-8'))
-#             send_telegram_message(f"✅ *Margin mode set to {margin_type}*")
-#             return True
-#         except Exception as e:
-#             err_text = getattr(e, 'response', None) and getattr(e.response, 'text', str(e))
-#             print(f"[WARN] set_margin_mode failed: {err_text}")
-#             send_telegram_message(f"⚠️ Failed to set margin mode to {margin_type}. "
+if __name__ == "__main__":
+    main()
 #                                   f"סיבות נפוצות: פוזיציות/פקודות פתוחות או שכבר במצב המבוקש.\n{err_text}")
 #             return False
 
