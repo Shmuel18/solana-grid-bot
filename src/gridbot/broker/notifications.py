@@ -1,29 +1,15 @@
-"""Telegram notifications handler."""
-
-import logging
-import threading
-
 import requests
+from gridbot.config.settings import Settings
 
-from ..config.settings import config
-
-
-def send_telegram_message(message: str) -> None:
-    """Send non-blocking telegram notification."""
-    if not config.telegram_bot_token or not config.telegram_chat_id:
+def send_telegram_message(settings: Settings, text: str):
+    """Sends a message to Telegram if bot token and chat ID are configured."""
+    if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
         return
-
-    url = f"https://api.telegram.org/bot{config.telegram_bot_token}/sendMessage"
-    payload = {
-        "chat_id": config.telegram_chat_id,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-
-    def _send_sync() -> None:
-        try:
-            requests.post(url, data=payload, timeout=5)
-        except Exception as e:
-            logging.exception("Telegram notify failed: %s", e)
-
-    threading.Thread(target=_send_sync, daemon=True).start()
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+            data={"chat_id": settings.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+            timeout=5,
+        )
+    except Exception:
+        pass

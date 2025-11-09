@@ -1,60 +1,65 @@
-"""Utility functions and helpers."""
-
-import csv
-import datetime
-import os
-import threading
-from typing import List
-
-from ..utils.logger import get_logger
-
-logger = get_logger(__name__)
-
+import time
 import requests
-from requests import Response
+from typing import Tuple
+from decimal import Decimal, ROUND_DOWN, ROUND_CEILING
 
-from ..config.settings import config
+# Global time offset for server time synchronization
+_time_offset_ms = 0
+_DEBUG_VERBOSE = True # Will be set by main
 
+def set_debug_verbose(verbose: bool):
+    global _DEBUG_VERBOSE
+    _DEBUG_VERBOSE = verbose
+
+def dprint(msg: str):
+    if _DEBUG_VERBOSE:
+        print(msg)
+
+def ts_ms() -> int:
+    """Returns current Unix timestamp in milliseconds, adjusted by server time offset."""
+    return int(time.time() * 1000 + _time_offset_ms)
+
+def sync_server_time(futures_base_url: str):
+    """Synchronizes local time with Binance server time."""
+    global _time_offset_ms
+    try:
+        r = requests.get(f"{futures_base_url}/time", timeout=5)
+        r.raise_for_status()
+        server_time = int(r.json().get("serverTime", 0))
+        _time_offset_ms = server_time - int(time.time() * 1000)
+        print(f"[TIME] server-local offset: {_time_offset_ms} ms")
+    except Exception as e:
+        print(f"[WARN] time sync failed: {e}")
+
+def _decimal_places(step: float) -> int:
+    """Calculates the number of decimal places in a float step."""
+    ds = Decimal(str(step)).normalize()
+    return -ds.as_tuple().exponent if ds.as_tuple().exponent < 0 else 0
+
+def format_step(x: float, step: float) -> str:
+    """Formats a float to align with a given step size (e.g., price or quantity precision)."""
+    dx = Decimal(str(x))
+    ds = Decimal(str(step))
+    # Use ROUND_DOWN for quantity/price clamping to ensure we don't exceed limits
+    q = (dx / ds).to_integral_value(rounding=ROUND_DOWN) * ds
+    exp = _decimal_places(step)
+    return format(q, f".{exp}f")
 
 def spread_bps(bid: float, ask: float) -> float:
-    """Calculate spread in basis points."""
+    """Calculates the spread in basis points (BPS)."""
     if ask <= 0:
-        return 9999.0
-    return (ask - bid) / ask * 10_000
+        return 9999
+    return (ask - bid) / ask * 10000
 
+def align_to_grid(mid: float, step: float) -> float:
+    """Aligns a mid-price to the nearest grid step (rounded up)."""
+    dm = Decimal(str(mid))
+    ds = Decimal(str(step))
+    # Use ROUND_CEILING to ensure the base price is always above the mid-price
+    return float(((dm / ds).to_integral_value(rounding=ROUND_CEILING)) * ds)
 
-def init_csv() -> None:
-    """Initialize CSV file with headers if needed."""
-    new = not os.path.exists(config.csv_file)
-    with open(config.csv_file, "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        if new:
-            w.writerow([
-                "time", "side", "price", "qty", "pnl", "total_pnl",
-                "bid", "ask", "spread_bps", "note"
-            ])
-
-
-def log_trade(side: str, price: float, qty: float, pnl: float, total: float,
-              bid: float, ask: float, spread_bps_val: float, note: str = "") -> None:
-    """Log trade details to CSV file."""
-    with open(config.csv_file, "a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow([
-            datetime.datetime.now().isoformat(timespec="seconds"),
-            side, f"{price:.4f}", f"{qty:.6f}", f"{pnl:.4f}", f"{total:.4f}",
-            f"{bid:.4f}", f"{ask:.4f}", f"{spread_bps_val:.3f}", note
-        ])
-
-
-def append_csv_row(filepath: str, row: List[str]) -> None:
-    """Append a row to CSV file."""
-    with open(filepath, "a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow(row)
-
-
-def request_with_retry(method: str, url: str, *, headers=None, data=None, params=None,
-                      timeout: float = 5.0, retries: int = 3) -> Response:
-    """Make HTTP request with retries and backoff."""
+def request_with_retry(method: str, url: str, *, headers=None, data=None, params=None, timeout=5.0, retries=3):
+    """Performs an HTTP request with exponential backoff retry logic."""
     delay = 0.5
     for i in range(retries):
         try:
@@ -62,24 +67,21 @@ def request_with_retry(method: str, url: str, *, headers=None, data=None, params
             r.raise_for_status()
             return r
         except requests.exceptions.HTTPError as e:
-            ra = e.response.headers.get("Retry-After")
-            if ra:
-                try:
-                    wait = max(float(ra), delay)
-                except:
-                    wait = delay
-            else:
-                wait = delay
+            dprint(f"[WARN] HTTP Error {e.response.status_code} on {url} (Attempt {i+1}/{retries})")
             if i == retries - 1:
                 raise
-            if i == 0:
-                logger.warning(f"[HTTP RETRY] {method} {url} failed ({e.response.status_code}). Retrying...")
-            threading.Event().wait(wait)
+            time.sleep(delay)
             delay = min(delay * 2, 8.0)
         except requests.exceptions.RequestException as e:
+            dprint(f"[WARN] Request Error on {url}: {e} (Attempt {i+1}/{retries})")
             if i == retries - 1:
                 raise
-            if i == 0:
-                logger.warning(f"[HTTP RETRY] {method} {url} failed ({e.__class__.__name__}). Retrying...")
-            threading.Event().wait(delay)
+            time.sleep(delay)
             delay = min(delay * 2, 8.0)
+
+def sanitize_tag(tag: str, max_len: int = 6) -> str:
+    """Sanitizes a session tag for use in client order IDs."""
+    s = ''.join(ch for ch in tag if ch.isalnum() or ch in ('-', '_'))
+    if len(s) > max_len:
+        s = s[:max_len]
+    return s or "r"

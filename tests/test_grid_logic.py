@@ -1,7 +1,7 @@
 """Basic tests for strategy/grid_logic.py"""
 import pytest
 
-from strategy.grid_logic import compute_grid_levels
+from gridbot.strategy.grid_logic import compute_grid_levels
 
 
 def test_compute_grid_levels_basic():
